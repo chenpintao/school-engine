@@ -1,0 +1,7 @@
+zh_CN:
+  site_settings:
+    school_engine_enabled: "启用学制引擎（年级计算、班级圈、毕业标记、小升初）"
+    school_engine_teacher_group: "教师组名（班级圈中教师只读权限）"
+    school_engine_graduate_group: "毕业生组名（历史班级圈只读权限）"
+    school_engine_anonymous_categories: "支持匿名发帖的分类 slug（逗号分隔，如 confess）"
+    school_engine_class_admin_group: "班级管理组名（该组成员可使用校园管理 API，留空则仅管理员）"

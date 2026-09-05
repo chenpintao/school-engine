@@ -1,0 +1,7 @@
+en:
+  site_settings:
+    school_engine_enabled: "Enable the school engine (grade calculation, class circles, graduation, junior-high transition)"
+    school_engine_teacher_group: "Teacher group name (read-only access in class circles)"
+    school_engine_graduate_group: "Graduate group name (read-only access to historical class circles)"
+    school_engine_anonymous_categories: "Categories (comma separated slugs) that allow anonymous posting, e.g. confess"
+    school_engine_class_admin_group: "Class admin group name; members can use the school management APIs (empty = staff only)"

@@ -1,0 +1,4 @@
+{
+  "plugins": ["@discourse/lint-configs/streerc"],
+  "rules": {}
+}

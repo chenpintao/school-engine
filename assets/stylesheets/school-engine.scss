@@ -1,0 +1,702 @@
+/* 注册/登录向导（复用 Discourse 组件与主题变量） */
+.school-auth-page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+
+  h2 {
+    font-size: var(--font-up-2);
+    margin-bottom: 0.5rem;
+  }
+
+  .school-subtitle {
+    color: var(--primary-low-mid);
+    margin-bottom: 1.5rem;
+  }
+}
+
+.school-auth-error {
+  background: var(--danger-low);
+  color: var(--danger);
+  border-radius: var(--d-border-radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: var(--font-down-1);
+}
+
+.school-field {
+  margin-bottom: 1rem;
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+    font-size: var(--font-down-1);
+  }
+
+  input,
+  select {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius);
+    background: var(--secondary);
+    color: var(--primary);
+  }
+
+  .school-hint {
+    color: var(--primary-low-mid);
+    font-size: var(--font-down-2);
+    margin-top: 0.3rem;
+  }
+
+  .school-hint-inline {
+    color: var(--primary-low-mid);
+    font-size: var(--font-down-2);
+    font-weight: 400;
+  }
+}
+
+.school-row2 {
+  display: flex;
+  gap: 0.75rem;
+
+  > div,
+  > select {
+    flex: 1;
+  }
+}
+
+/* 步骤条 */
+.school-steps {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+}
+
+.school-step {
+  flex: 1;
+  text-align: center;
+  padding: 0.5rem 0.25rem;
+  border-radius: var(--d-border-radius);
+  background: var(--primary-very-low);
+  color: var(--primary-low-mid);
+  font-size: var(--font-down-2);
+
+  .school-step-num {
+    display: inline-flex;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--primary-low);
+    color: var(--secondary);
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    margin-right: 0.25rem;
+    font-size: var(--font-down-2);
+  }
+
+  &.active {
+    background: var(--tertiary-low);
+    color: var(--tertiary);
+
+    .school-step-num {
+      background: var(--tertiary);
+    }
+  }
+
+  &.done {
+    .school-step-num {
+      background: var(--success);
+    }
+  }
+}
+
+/* 身份选择 */
+.school-identity-grid {
+  display: flex;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.school-identity-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1.5rem 1rem;
+  border: 2px solid var(--primary-low);
+  border-radius: var(--d-border-radius);
+  background: var(--secondary);
+  cursor: pointer;
+  font-weight: 700;
+  transition: border-color 0.15s, background 0.15s;
+
+  .school-identity-icon {
+    font-size: 2rem;
+  }
+
+  small {
+    color: var(--primary-low-mid);
+    font-weight: 400;
+    font-size: var(--font-down-1);
+  }
+
+  &:hover {
+    border-color: var(--tertiary-medium);
+  }
+
+  &.selected {
+    border-color: var(--tertiary);
+    background: var(--tertiary-very-low);
+  }
+}
+
+/* 确认页 */
+.school-confirm-list {
+  background: var(--primary-very-low);
+  border-radius: var(--d-border-radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.school-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  font-size: var(--font-down-0);
+
+  .school-confirm-k {
+    color: var(--primary-low-mid);
+  }
+
+  .school-confirm-v {
+    font-weight: 700;
+  }
+}
+
+.school-warning {
+  background: var(--highlight-low);
+  color: var(--danger);
+  border-radius: var(--d-border-radius);
+  padding: 0.75rem 1rem;
+  font-size: var(--font-down-1);
+  margin-bottom: 1rem;
+}
+
+/* 欢迎页 */
+.school-welcome {
+  text-align: center;
+  padding: 1rem 0;
+
+  h1 {
+    margin-bottom: 0.5rem;
+  }
+
+  p {
+    color: var(--primary-low-mid);
+    margin-bottom: 1.5rem;
+  }
+}
+
+.school-welcome-guide {
+  text-align: left;
+  background: var(--tertiary-very-low);
+  border: 1px dashed var(--tertiary);
+  border-radius: var(--d-border-radius);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+
+  h3 {
+    margin-bottom: 0.5rem;
+    font-size: var(--font-up-0);
+  }
+
+  p {
+    margin-bottom: 1rem;
+    font-size: var(--font-down-1);
+  }
+}
+
+.school-next-btn,
+.school-submit-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.school-prev-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  background: var(--primary-very-low);
+}
+
+.school-switch {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: var(--font-down-1);
+
+  a {
+    color: var(--tertiary);
+  }
+}
+
+/* 步骤条可点击回退 */
+.school-step.clickable {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tertiary-very-low);
+  }
+}
+
+/* 个人资料页 */
+.school-profile-page {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.school-profile-card {
+  background: var(--primary-very-low);
+  border-radius: var(--d-border-radius);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+
+  h2 {
+    font-size: var(--font-up-0);
+    margin-bottom: 0.75rem;
+  }
+
+  .school-hint {
+    color: var(--primary-low-mid);
+    font-size: var(--font-down-1);
+    margin-bottom: 1rem;
+  }
+}
+
+.school-contact-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+
+  .school-field {
+    flex: 1;
+    margin-bottom: 1rem;
+  }
+
+  .school-visibility {
+    padding-bottom: 1.05rem;
+    white-space: nowrap;
+  }
+}
+
+.school-profile-saved {
+  background: var(--success-low);
+  color: var(--success);
+  border-radius: var(--d-border-radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.school-profile-loading {
+  text-align: center;
+  padding: 3rem 0;
+  color: var(--primary-low-mid);
+}
+
+
+/* preferences profile tab：用学籍+联系方式组件代替原生字段（保留框架与其他 tab） */
+.user-preferences-page:has(.school-profile-page) .control-group {
+  display: none;
+}
+.user-preferences-page:has(.school-profile-page) .save-button {
+  display: none;
+}
+
+/* security 页密码修改（代替原生邮箱重置） */
+.user-preferences-page:has(.school-change-password) .pref-password {
+  display: none;
+}
+
+.school-change-password {
+  max-width: 400px;
+  padding: 0.25rem 0;
+
+  .school-change-password-title {
+    font-size: var(--font-up-0);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  .school-field {
+    margin-bottom: 0.5rem;
+
+    label {
+      margin-bottom: 0.2rem;
+      font-size: var(--font-down-2);
+    }
+
+    input {
+      padding: 0.4rem 0.6rem;
+    }
+  }
+
+  .school-pw-submit {
+    margin-top: 0.4rem;
+  }
+}
+
+/* 同学录 */
+.school-directory-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+
+  h2 {
+    font-size: var(--font-up-2);
+    margin-bottom: 1rem;
+  }
+}
+
+.school-directory-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  background: var(--primary-very-low);
+  border-radius: var(--d-border-radius);
+  padding: 1rem;
+
+  .school-field {
+    margin-bottom: 0;
+    min-width: 0;
+  }
+
+  select,
+  input {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius);
+    background: var(--secondary);
+  }
+
+  .school-directory-check {
+    display: flex;
+    align-items: center;
+    padding-bottom: 0.35rem;
+    font-size: var(--font-down-1);
+    white-space: nowrap;
+
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    input[type="checkbox"] {
+      margin: 0;
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+      accent-color: var(--tertiary);
+    }
+  }
+
+  .d-button {
+    white-space: nowrap;
+  }
+}
+
+.school-directory-export {
+  margin: 0.75rem 0;
+  font-size: var(--font-down-1);
+
+  a {
+    color: var(--tertiary);
+  }
+}
+
+.school-directory-results {
+  margin-top: 1rem;
+}
+
+.school-directory-card {
+  display: flex;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--primary-low);
+  border-radius: var(--d-border-radius);
+  margin-bottom: 0.6rem;
+  background: var(--secondary);
+}
+
+.school-directory-user-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border-radius: 50%;
+  overflow: hidden;
+
+  &:hover img {
+    filter: brightness(0.9);
+  }
+}
+
+.school-directory-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+}
+
+.school-directory-username-link {
+  color: var(--primary);
+  font-weight: 700;
+  text-decoration: none;
+
+  &:hover {
+    color: var(--tertiary);
+  }
+}
+
+.school-directory-gender {
+  color: var(--primary-high);
+  font-size: var(--font-down-1);
+}
+
+.school-directory-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.school-directory-tag {
+  background: var(--primary-very-low);
+  color: var(--primary-high);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: var(--font-down-1);
+}
+
+.school-profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.school-profile-tag {
+  background: var(--primary-very-low);
+  color: var(--primary-high);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: var(--font-down-1);
+}
+
+.school-profile-tag-gender {
+  background: var(--tertiary-low);
+  color: var(--tertiary);
+}
+
+.school-directory-info {
+  flex: 1;
+}
+
+.school-directory-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.school-directory-username {
+  font-weight: 700;
+}
+
+.school-directory-realname {
+  color: var(--primary-low-mid);
+  font-size: var(--font-down-1);
+}
+
+.school-directory-grade {
+  color: var(--tertiary);
+  font-size: var(--font-down-1);
+}
+
+.school-directory-bio {
+  color: var(--primary-low-mid);
+  font-size: var(--font-down-1);
+  margin-top: 0.25rem;
+}
+
+.school-directory-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.school-directory-contact-item {
+  background: var(--tertiary-very-low);
+  color: var(--tertiary);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: var(--font-down-2);
+}
+
+.school-directory-empty {
+  text-align: center;
+  color: var(--primary-low-mid);
+  padding: 2rem 0;
+}
+
+/* 自助转班 */
+.school-transfer-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+
+  select {
+    flex: 1;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-border-radius);
+    background: var(--secondary);
+  }
+}
+
+/* 管理员页 */
+.school-admin-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+
+  h2 {
+    font-size: var(--font-up-2);
+    margin-bottom: 1rem;
+  }
+}
+
+.school-admin-search {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+
+  .school-field {
+    flex: 1;
+    margin-bottom: 0;
+  }
+}
+
+.school-admin-results {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.school-admin-user {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--primary-low);
+  border-radius: var(--d-border-radius);
+  background: var(--secondary);
+  cursor: pointer;
+  font-size: var(--font-down-1);
+
+  &:hover {
+    border-color: var(--tertiary);
+  }
+
+  &.selected {
+    border-color: var(--tertiary);
+    background: var(--tertiary-very-low);
+  }
+}
+
+// ---- 管理页列表式管理（学籍 / 班级圈）----
+
+.school-admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.school-admin-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+
+  .school-field {
+    margin-bottom: 0;
+    min-width: 10rem;
+  }
+}
+
+.school-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-down-1);
+  margin-bottom: 1rem;
+
+  th,
+  td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  th {
+    color: var(--primary-med-or-secondary-med);
+    font-weight: 700;
+  }
+
+  tbody tr:hover {
+    background: var(--primary-very-low);
+  }
+}
+
+.school-admin-toolbar {
+  margin-bottom: 1rem;
+}
+
+.school-admin-more {
+  margin-bottom: 2rem;
+}
+
+.school-admin-denied {
+  color: var(--danger);
+}
+
+.school-field-toggle {
+  margin-top: 1rem;
+}
+
+// ---- 小升初弹窗：我已离校 ----
+
+.school-leave-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--primary-low);
+
+  .school-leave-hint {
+    color: var(--primary-med-or-secondary-med);
+    font-size: var(--font-down-1);
+  }
+}
+
+// ---- 发帖编辑器：不给老师看开关 ----
+
+.school-hide-from-staff {
+  margin: 0.5rem 0;
+}

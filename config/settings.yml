@@ -1,0 +1,13 @@
+school_engine:
+  school_engine_enabled:
+    default: true
+    client: true
+  school_engine_teacher_group:
+    default: "teachers"
+  school_engine_graduate_group:
+    default: "graduates"
+  school_engine_anonymous_categories:
+    default: "confess"
+  # 细分管理授权：该组成员可使用校园管理 API（与 staff 等效，不需要 admin 后台权限）
+  school_engine_class_admin_group:
+    default: ""

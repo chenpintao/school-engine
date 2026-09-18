@@ -256,13 +256,16 @@
         <nav class="se-nav">
           <a href="/latest">最新</a>
           <a href="/categories">分类</a>
+          <a href="/g">班级圈</a>
           <a href="/school/directory">同学录</a>
           <% if current_user %>
+            <a href="/school/profile">我的</a>
             <a class="se-nav-user" href="/u/<%= current_user.username_lower %>">
               <%= current_user.username %>
             </a>
           <% else %>
             <a href="/school/login">登录</a>
+            <a class="se-nav-user" href="/school/register">注册</a>
           <% end %>
         </nav>
       </div>

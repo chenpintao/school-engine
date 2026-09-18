@@ -865,6 +865,11 @@ body.school-circle-group {
     gap: 0.35rem;
     margin-right: 1rem;
     cursor: pointer;
+
+    &.is-locked {
+      cursor: default;
+      opacity: 0.85;
+    }
   }
 
   .school-anonymous-choice-hint {

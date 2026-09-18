@@ -6,10 +6,11 @@ import SiteSetting from "discourse/lib/site-settings";
 import { i18n } from "discourse-i18n";
 
 /**
- * 表达空间回帖身份选择：显示昵称 / 匿名。
- * 写入 composer.schoolAnonymous，经 serializeOnCreate → 请求参数 school_anonymous
- * → 后端仅对表达空间分类的回帖（post_number>1、学生身份）生效。
- * OP（createTopic）、staff、教师、非表达空间分类均不显示。
+ * 匿名身份控件（composer-fields outlet）：
+ * - 全校表达空间（回帖、学生）：显示昵称 / 匿名 二选一，写 composer.schoolAnonymous
+ * - 匿名墙（发主题或回帖，任何身份）：整分类强制匿名，仅提示，无需也不接受选择；
+ *   服务端 post_created 无条件打匿名标记。
+ * OP（createTopic）、staff、教师、其他分类均不显示表达空间选择器。
  */
 export default class SchoolAnonymousChoice extends Component {
   @service currentUser;
@@ -24,13 +25,24 @@ export default class SchoolAnonymousChoice extends Component {
     return this.site.categories?.findBy?.("id", id)?.slug;
   }
 
-  get shouldShow() {
+  get isWall() {
+    return this.categorySlug === SiteSetting.school_engine_wall_category;
+  }
+
+  get isExpressionReply() {
     return (
       this.composer?.action === "reply" &&
       !this.currentUser?.staff &&
       !this.currentUser?.school_teacher &&
       this.categorySlug === SiteSetting.school_engine_expression_category
     );
+  }
+
+  get shouldShow() {
+    if (this.isWall) {
+      return ["reply", "createTopic"].includes(this.composer?.action);
+    }
+    return this.isExpressionReply;
   }
 
   get useNickname() {
@@ -49,32 +61,45 @@ export default class SchoolAnonymousChoice extends Component {
   <template>
     {{#if this.shouldShow}}
       <div class="school-anonymous-choice">
-        <span class="school-anonymous-choice-title">
-          {{i18n "school_engine.expression_identity"}}
-        </span>
-        <label class="school-anonymous-choice-option">
-          <input
-            type="radio"
-            name="school-anonymous-choice"
-            value="nickname"
-            checked={{this.useNickname}}
-            {{on "change" this.choose}}
-          />
-          {{i18n "school_engine.expression_choice_nickname"}}
-        </label>
-        <label class="school-anonymous-choice-option">
-          <input
-            type="radio"
-            name="school-anonymous-choice"
-            value="anonymous"
-            checked={{this.useAnonymous}}
-            {{on "change" this.choose}}
-          />
-          {{i18n "school_engine.expression_choice_anonymous"}}
-        </label>
-        <p class="school-anonymous-choice-hint">
-          {{i18n "school_engine.expression_anonymous_hint"}}
-        </p>
+        {{#if this.isWall}}
+          <span class="school-anonymous-choice-title">
+            {{i18n "school_engine.wall_identity"}}
+          </span>
+          <label class="school-anonymous-choice-option is-locked">
+            <input type="radio" name="school-anonymous-choice" value="anonymous" checked disabled />
+            {{i18n "school_engine.wall_choice_anonymous"}}
+          </label>
+          <p class="school-anonymous-choice-hint">
+            {{i18n "school_engine.wall_anonymous_hint"}}
+          </p>
+        {{else}}
+          <span class="school-anonymous-choice-title">
+            {{i18n "school_engine.expression_identity"}}
+          </span>
+          <label class="school-anonymous-choice-option">
+            <input
+              type="radio"
+              name="school-anonymous-choice"
+              value="nickname"
+              checked={{this.useNickname}}
+              {{on "change" this.choose}}
+            />
+            {{i18n "school_engine.expression_choice_nickname"}}
+          </label>
+          <label class="school-anonymous-choice-option">
+            <input
+              type="radio"
+              name="school-anonymous-choice"
+              value="anonymous"
+              checked={{this.useAnonymous}}
+              {{on "change" this.choose}}
+            />
+            {{i18n "school_engine.expression_choice_anonymous"}}
+          </label>
+          <p class="school-anonymous-choice-hint">
+            {{i18n "school_engine.expression_anonymous_hint"}}
+          </p>
+        {{/if}}
       </div>
     {{/if}}
   </template>

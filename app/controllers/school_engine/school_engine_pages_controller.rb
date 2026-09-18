@@ -5,8 +5,10 @@ module SchoolEngine
   class SchoolEnginePagesController < ::ApplicationController
     requires_plugin "school-engine"
 
-    # 登录/注册页允许匿名访问；其余页面（profile/directory/admin）仍走原生登录校验
-    skip_before_action :check_xhr, :redirect_to_login_if_required, only: %i[register login]
+    # 所有 SPA shell 页面都是浏览器直接 GET HTML，必须跳过 check_xhr（否则被兜成 RenderEmpty/"empty"）
+    # 登录/注册额外放行未登录访问；其余页面（profile/directory/manage/admin）仍走原生登录校验
+    skip_before_action :check_xhr
+    skip_before_action :redirect_to_login_if_required, only: %i[register login]
     before_action :redirect_if_logged_in, only: %i[register login]
     # 纵深防御：admin 页面除路由层 StaffConstraint 外，控制器层再走一次 guardian
     before_action :ensure_staff_page, only: :admin_page

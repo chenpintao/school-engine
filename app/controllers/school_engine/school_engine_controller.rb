@@ -72,7 +72,7 @@ module SchoolEngine
         teacher_name = params[:teacher_name].to_s.strip
         raise Discourse::InvalidParameters.new(:teacher_name) if teacher_name.blank?
         fields["real_name"] = teacher_name
-        fields["real_name_initials"] = sanitize_initials(params[:real_name_initials])
+        fields["real_name_initials"] = SchoolEngine::Pinyin.initials(teacher_name)
         fields["teacher_id_last4"] = params[:teacher_id_last4].to_s.strip
         fields["status"] = "教师"
       end
@@ -116,8 +116,12 @@ module SchoolEngine
       end
 
       current_user.custom_fields["real_name"] = rn
-      initials = sanitize_initials(params[:real_name_initials])
-      current_user.custom_fields["real_name_initials"] = initials if initials.present?
+      initials = SchoolEngine::Pinyin.initials(rn)
+      if initials.present?
+        current_user.custom_fields["real_name_initials"] = initials
+      else
+        current_user.custom_fields.delete("real_name_initials")
+      end
       current_user.save_custom_fields(true)
       DiscourseEvent.trigger(:user_updated, current_user)
       render json: success_json
@@ -307,11 +311,6 @@ module SchoolEngine
       { username: u.username, cohort: cohort, class_name: cls, display: display }
     end
 
-    # 拼音首字母白名单清洗（仅保留小写字母）
-    def sanitize_initials(value)
-      value.to_s.downcase.gsub(/[^a-z]/, "").first(40)
-    end
-
     # "不给老师看"主题 id 子查询（供 timeline 教师视角过滤）
     def timeline_hidden_sql
       <<~SQL.squish
@@ -417,9 +416,9 @@ module SchoolEngine
         end
       end
 
-      # 真实姓名变更时同步拼音首字母（前端计算，服务端只做白名单字符清洗）
+      # 真实姓名变更时在服务端重算拼音首字母（不采信前端传值）
       if params.key?(:real_name)
-        initials = sanitize_initials(params[:real_name_initials])
+        initials = SchoolEngine::Pinyin.initials(params[:real_name].to_s.strip)
         if initials.present?
           u.custom_fields["real_name_initials"] = initials
         else
@@ -464,7 +463,28 @@ module SchoolEngine
     def admin_fix_displays
       SchoolEngine::ClassCircle.update_circle_display_names
       SchoolEngine::Tags.ensure_tags!
+      backfill_name_initials!
       render json: success_json
+    end
+
+    # 为老用户回填拼音首字母（历史数据 real_name 存在但 real_name_initials 缺失）
+    def backfill_name_initials!
+      User
+        .human_users
+        .where(
+          id:
+            UserCustomField
+              .where(name: "real_name")
+              .where.not(value: [nil, ""])
+              .select(:user_id)
+        )
+        .find_each do |u|
+          next if u.custom_fields["real_name_initials"].present?
+          initials = SchoolEngine::Pinyin.initials(u.custom_fields["real_name"].to_s)
+          next if initials.blank?
+          u.custom_fields["real_name_initials"] = initials
+          u.save_custom_fields(true)
+        end
     end
 
     # 联系方式是否公开（boolean custom field 存 "f"/false）

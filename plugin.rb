@@ -34,6 +34,7 @@ after_initialize do
   add_permitted_post_create_param(:school_class_notice)
 
   require_relative "lib/school_engine/grade"
+  require_relative "lib/school_engine/pinyin"
   require_relative "lib/school_engine/class_circle"
   require_relative "lib/school_engine/anonymous"
   require_relative "lib/school_engine/expression"
@@ -113,6 +114,11 @@ after_initialize do
          post.custom_fields["anonymous"] != "true"
         post.custom_fields["anonymous"] = "true"
         SchoolEngine::Expression.assign_anon_label!(post)
+        changed = true
+      end
+
+      # 匿名墙：整分类强制匿名（主题 OP + 回帖，任何身份，无需勾选）
+      if SchoolEngine::Expression.force_wall_anonymous!(post)
         changed = true
       end
 

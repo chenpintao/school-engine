@@ -316,6 +316,7 @@ module SchoolEngine
         { slug: "chat", name: "校园闲聊", color: "0E76BD", perms: { staff => full } },
         { slug: "share", name: "知识分享", color: "3AB54A", perms: { staff => full } },
         { slug: "confess", name: "表白墙", color: "E45735", perms: { staff => full } },
+        { slug: "anonymous-wall", name: "匿名墙", color: "8E44AD", perms: { staff => full } },
         { slug: "announce", name: "校园公告", color: "B22222", perms: { staff => full } },
       ]
 

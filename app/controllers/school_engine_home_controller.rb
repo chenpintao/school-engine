@@ -5,8 +5,9 @@
 class SchoolEngineHomeController < ::ApplicationController
   requires_plugin "school-engine"
 
+  # 浏览器直接 GET HTML：必须跳过 check_xhr，否则被 ApplicationController 兜成 RenderEmpty（"empty"）
   # 站点开启 login_required 时，由本控制器自行重定向到自定义登录页（不走 Ember 登录）
-  skip_before_action :redirect_to_login_if_required, only: :index
+  skip_before_action :check_xhr, :redirect_to_login_if_required, only: :index
   before_action :redirect_to_school_login, only: :index
   layout "school_engine_home/layout"
 

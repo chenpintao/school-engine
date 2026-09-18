@@ -41,6 +41,33 @@ module SchoolEngine
         user_may_anonymous?(post.user)
     end
 
+    # ---- 匿名墙（整分类强制匿名，机制与表达空间一致，只是无需勾选、OP 也匿名）----
+
+    def self.wall_category
+      slug = SiteSetting.school_engine_wall_category.to_s.strip
+      slug.present? ? Category.find_by(slug: slug) : nil
+    end
+
+    def self.wall_category?(category)
+      return false if category.nil?
+      category.slug == SiteSetting.school_engine_wall_category.to_s.strip
+    end
+
+    # Post 是否位于匿名墙
+    def self.in_wall?(post)
+      wall_category?(post&.topic&.category)
+    end
+
+    # 强制匿名：匿名墙内任何帖子（含 OP、任何身份）都打匿名标记并分配话题内字母标签
+    # 返回 true 表示本次新写入了标记
+    def self.force_wall_anonymous!(post)
+      return false unless in_wall?(post)
+      return false if post.custom_fields["anonymous"] == "true"
+      post.custom_fields["anonymous"] = "true"
+      assign_anon_label!(post)
+      true
+    end
+
     # 为匿名回帖分配话题内字母标签，写 post.custom_fields["anon_label"]
     # 规则：同一用户在同一话题复用已有字母；新用户按 A、B、C… 首次匿名顺序分配
     # 使用两键咨询锁（话题级），避免并发匿名回帖争用同一字母

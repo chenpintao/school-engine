@@ -15,6 +15,10 @@ school_engine:
   school_engine_expression_category:
     default: "confess"
     client: true
+  # 匿名墙分类 slug（整分类强制匿名：主题与回帖一律匿名，无需勾选）
+  school_engine_wall_category:
+    default: "anonymous-wall"
+    client: true
   # 每日精选上限（自然日）
   school_engine_featured_per_day:
     default: 3

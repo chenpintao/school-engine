@@ -3,6 +3,7 @@ import { tracked } from "@glimmer/tracking";
 import { service } from "@ember/service";
 import { didInsert } from "@ember/render-modifiers/modifiers/did-insert";
 import { ajax } from "discourse/lib/ajax";
+import dIcon from "discourse/helpers/d-icon";
 import { i18n } from "discourse-i18n";
 
 /**
@@ -65,7 +66,7 @@ export default class SchoolHomeDigest extends Component {
               {{/if}}
               <a class="school-digest-topic-join" href={{this.dailyTopic.url}}>
                 {{i18n "school_engine.home_daily_join"}}
-                {{d-icon "chevron-right"}}
+                {{dIcon "chevron-right"}}
               </a>
             </section>
           {{/if}}
@@ -83,12 +84,12 @@ export default class SchoolHomeDigest extends Component {
                   <li class="school-digest-item">
                     <div class="school-digest-item-meta">
                       <span class="school-digest-item-author">
-                        {{d-icon (if post.anonymous "far-eye-slash" "user")}}
+                        {{dIcon (if post.anonymous "far-eye-slash" "user")}}
                         {{post.author_name}}
                       </span>
                       {{#if post.like_count}}
                         <span class="school-digest-item-likes">
-                          {{d-icon "d-liked"}}
+                          {{dIcon "d-liked"}}
                           {{post.like_count}}
                         </span>
                       {{/if}}

@@ -9,7 +9,7 @@ import { i18n } from "discourse-i18n";
 /**
  * 原生首页（discovery /latest）顶部的「今日话题 + 精选回答」区块。
  * 不接管 "/"、不自绘页面框架——侧边栏、顶部导航、话题列表全部沿用 Discourse 原生，
- * 本组件只通过 above-discovery-list-container outlet 注入到原生列表上方；
+ * 本组件只通过 discovery-list-container-top outlet 注入到原生列表上方；
  * 数据来自 GET /school/home.json。仅用核心已验证模块（ajax / i18n / render-modifiers），
  * 样式只引用 DC CSS 变量，避免任何未验证的新模块导入拖垮整个插件 bundle。
  */

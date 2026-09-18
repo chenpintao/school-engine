@@ -86,8 +86,8 @@ export default {
                       get name() {
                         return "school-me";
                       }
-                      get route() {
-                        return "school-profile";
+                      get href() {
+                        return `/u/${currentUser.username}/preferences/profile`;
                       }
                       get title() {
                         return "我的";

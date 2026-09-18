@@ -6,10 +6,10 @@ module SchoolEngine
     requires_plugin "school-engine"
     wrap_parameters false
 
-    requires_login
-    # login_required=true 时未登录 JSON/XHR 会被全局拦截，注册接口必须放行；
-    # home 也一并放行（login_required 站点匿名用户到不了 discovery，放行无副作用）。
-    # 注意：requires_login 注册的回调名是 block_if_requires_login，不可跳不存在的 ensure_logged_in。
+    # register_user 与 home 放行匿名（注册接口必须公开；home 供 /latest 首页区块在未登录时展示）
+    requires_login except: %i[register_user home]
+    # login_required=true 时未登录 JSON/XHR 会被全局拦截，这两个接口同样需要放行重定向回调。
+    # 注意：requires_login 自身注册的是 block_if_requires_login，已由上面的 except 排除，不要再 skip 不存在的回调。
     skip_before_action :redirect_to_login_if_required, only: %i[register_user home]
 
     # staff 专属操作（含联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权

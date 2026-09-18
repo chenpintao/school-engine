@@ -2,7 +2,6 @@ import Component from "@glimmer/component";
 import { service } from "@ember/service";
 import { action } from "@ember/object";
 import { on } from "@ember/modifier";
-import SiteSetting from "discourse/lib/site-settings";
 import { i18n } from "discourse-i18n";
 
 /**
@@ -15,6 +14,7 @@ import { i18n } from "discourse-i18n";
 export default class SchoolAnonymousChoice extends Component {
   @service currentUser;
   @service site;
+  @service siteSettings;
 
   get composer() {
     return this.args.outletArgs?.model;
@@ -26,7 +26,7 @@ export default class SchoolAnonymousChoice extends Component {
   }
 
   get isWall() {
-    return this.categorySlug === SiteSetting.school_engine_wall_category;
+    return this.categorySlug === this.siteSettings.school_engine_wall_category;
   }
 
   get isExpressionReply() {
@@ -34,7 +34,7 @@ export default class SchoolAnonymousChoice extends Component {
       this.composer?.action === "reply" &&
       !this.currentUser?.staff &&
       !this.currentUser?.school_teacher &&
-      this.categorySlug === SiteSetting.school_engine_expression_category
+      this.categorySlug === this.siteSettings.school_engine_expression_category
     );
   }
 

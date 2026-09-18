@@ -5,7 +5,6 @@ import { service } from "@ember/service";
 import DButton from "discourse/ui-kit/d-button";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
-import SiteSetting from "discourse/lib/site-settings";
 import { i18n } from "discourse-i18n";
 
 /**
@@ -16,6 +15,7 @@ import { i18n } from "discourse-i18n";
 export default class SchoolFeatureButton extends Component {
   @service currentUser;
   @service site;
+  @service siteSettings;
   @tracked saving = false;
 
   get visible() {
@@ -23,7 +23,7 @@ export default class SchoolFeatureButton extends Component {
     if (!this.currentUser?.staff || !post || post.post_number <= 1) {
       return false;
     }
-    const slug = SiteSetting.school_engine_expression_category;
+    const slug = this.siteSettings.school_engine_expression_category;
     const categoryId = post.topic?.category_id;
     return categoryId && this.site.categories?.findBy?.("slug", slug)?.id === categoryId;
   }

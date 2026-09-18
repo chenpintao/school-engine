@@ -28,7 +28,7 @@ module SchoolEngine
     # 当前视角是否应看到匿名（非作者、非管理员）
     def self.mask?(post, scope)
       return false if post.nil?
-      return false unless post.custom_fields["anonymous"].present?
+      return false if post.custom_fields["anonymous"].blank?
       return false if scope.is_staff?
       return false if scope.current_user && scope.current_user.id == post.user_id
       true
@@ -42,26 +42,71 @@ module SchoolEngine
       true
     end
 
+    # 该帖对外显示的匿名名称：
+    # 带 anon_label 的表达空间新机制 → "匿名同学X"；历史帖/无标签 → "匿名用户"
+    def self.display_name_for(post)
+      label = post&.custom_fields&.[]("anon_label").to_s.strip.upcase
+      label.present? ? "匿名同学#{label}" : ANONYMOUS_NAME
+    end
+
     # 虚拟匿名用户（列表映射 id=-1 / BasicUser 级序列化复用）
     def self.anon_user
       ::User.new(id: -1, username: ANONYMOUS_NAME, name: ANONYMOUS_NAME)
     end
 
     # BasicUserSerializer 形态的匿名用户哈希（reply_to_user 等直接返回 JSON 的场景）
-    def self.anon_basic_user_json
+    # 传入目标帖时按其标签生成"匿名同学X"，不传则为历史"匿名用户"
+    def self.anon_basic_user_json(post = nil)
+      name = post ? display_name_for(post) : ANONYMOUS_NAME
       {
         id: -1,
-        username: ANONYMOUS_NAME,
-        name: ANONYMOUS_NAME,
+        username: name,
+        name: name,
         avatar_template: ::User.avatar_template(ANONYMOUS_NAME, nil),
       }
+    end
+
+    # 引用头掩码：新帖引用了"对该作者应匿名"的帖子时，替换 cooked 引用块中的
+    # 头像与用户名（防止客户端把真实姓名写入 [quote] 头而泄露身份）
+    # 返回新的 cooked HTML；无需替换时返回 nil
+    def self.mask_quote_headers(post)
+      return nil if post.cooked.blank?
+      targets = post.quoted_posts.index_by(&:id)
+      return nil if targets.empty?
+
+      guardian = ::Guardian.new(post.user)
+      doc = Nokogiri::HTML5.fragment(post.cooked)
+      changed = false
+
+      doc.css("aside.quote").each do |aside|
+        target = targets[aside["data-post"].to_i]
+        next unless target
+        next unless mask?(target, guardian)
+
+        name = display_name_for(target)
+        title = aside.at_css(".title")
+        next unless title
+
+        title.css("img.avatar").each { |img| img.remove }
+        title.css('a[href*="/u/"]').each do |a|
+          a["href"] = "#"
+          a.content = name
+        end
+        # 裸文本兜底：标题里 "张三:" / "张三 said:" 形态
+        title.xpath("text()").each do |node|
+          node.content = node.content.gsub(/\S+(?=\s*(?:said:)?[：:])/) { name }
+        end
+        changed = true
+      end
+
+      changed ? doc.to_html : nil
     end
 
     # 主题顶楼是否匿名（topic 级掩码判定：created_by / last_poster / participants）
     def self.topic_masked?(topic, scope)
       return false if topic.nil?
       first = topic.first_post
-      return false unless first&.custom_fields&.[]("anonymous").present?
+      return false if first&.custom_fields&.[]("anonymous").blank?
       mask_user?(topic.user, scope)
     end
 
@@ -81,11 +126,19 @@ module SchoolEngine
     # 帖子流（顶楼 + 回帖）：用户名 / 姓名 / 头像 伪装
     module BasicPostSerializerExtension
       def username
-        SchoolEngine::Anonymous.mask?(object, scope) ? SchoolEngine::Anonymous::ANONYMOUS_NAME : super
+        if SchoolEngine::Anonymous.mask?(object, scope)
+          SchoolEngine::Anonymous.display_name_for(object)
+        else
+          super
+        end
       end
 
       def name
-        SchoolEngine::Anonymous.mask?(object, scope) ? SchoolEngine::Anonymous::ANONYMOUS_NAME : super
+        if SchoolEngine::Anonymous.mask?(object, scope)
+          SchoolEngine::Anonymous.display_name_for(object)
+        else
+          super
+        end
       end
 
       # 统一"匿"字头像（letter avatar）
@@ -196,10 +249,18 @@ module SchoolEngine
       end
 
       def participants
-        ids = SchoolEngine::Anonymous.topic_anon_user_ids(object.topic)
+        labels = school_anon_labels
+        legacy_ids =
+          SchoolEngine::Anonymous.topic_anon_user_ids(object.topic) - labels.keys.to_set
         (super || []).map do |pc|
           u = pc[:user]
-          pc[:user] = SchoolEngine::Anonymous.anon_user if u && ids.include?(u.id)
+          if u
+            if labels.key?(u.id)
+              pc[:user] = SchoolEngine::Expression.labeled_user(labels[u.id])
+            elsif legacy_ids.include?(u.id)
+              pc[:user] = SchoolEngine::Anonymous.anon_user
+            end
+          end
           pc
         end
       end
@@ -209,13 +270,28 @@ module SchoolEngine
       def topic_masked?
         SchoolEngine::Anonymous.topic_masked?(object.topic, scope)
       end
+
+      # 话题内 {user_id => 字母标签}（表达空间新机制）
+      def school_anon_labels
+        @school_anon_labels ||=
+          ::Post
+            .where(topic_id: object.topic.id)
+            .joins(:_custom_fields)
+            .where(_custom_fields: { name: "anon_label" })
+            .pluck(:user_id, "_custom_fields.value")
+            .to_h
+      end
     end
 
     # 帖子流补充字段（BasicPostSerializer 只覆盖 username/name/avatar，
     # PostSerializer 的 display_username 直接读 user.name，会绕过掩码泄露真实姓名）
     module PostSerializerExtension
       def display_username
-        SchoolEngine::Anonymous.mask?(object, scope) ? SchoolEngine::Anonymous::ANONYMOUS_NAME : super
+        if SchoolEngine::Anonymous.mask?(object, scope)
+          SchoolEngine::Anonymous.display_name_for(object)
+        else
+          super
+        end
       end
 
       # 被回复者（回复目标帖是匿名帖时掩码，防止跨帖拼接出真实身份）
@@ -223,7 +299,7 @@ module SchoolEngine
         target =
           ::Post.find_by(topic_id: object.topic_id, post_number: object.reply_to_post_number)
         if target && SchoolEngine::Anonymous.mask?(target, scope)
-          SchoolEngine::Anonymous.anon_basic_user_json
+          SchoolEngine::Anonymous.anon_basic_user_json(target)
         else
           super
         end
@@ -258,11 +334,11 @@ module SchoolEngine
       end
 
       def display_username
-        masked? ? SchoolEngine::Anonymous::ANONYMOUS_NAME : super
+        masked? ? SchoolEngine::Anonymous.display_name_for(post) : super
       end
 
       def acting_user_name
-        masked? ? SchoolEngine::Anonymous::ANONYMOUS_NAME : super
+        masked? ? SchoolEngine::Anonymous.display_name_for(post) : super
       end
 
       def avatar_template

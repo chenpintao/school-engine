@@ -11,3 +11,18 @@ school_engine:
   # 细分管理授权：该组成员可使用校园管理 API（与 staff 等效，不需要 admin 后台权限）
   school_engine_class_admin_group:
     default: ""
+  # 全校表达空间分类 slug（改造原表白墙分类；旧内容保留）
+  school_engine_expression_category:
+    default: "confess"
+    client: true
+  # 每日精选上限（自然日）
+  school_engine_featured_per_day:
+    default: 3
+  # 进入时光胶囊的点赞数阈值
+  school_engine_capsule_like_threshold:
+    default: 10
+  # 学期末月-日（两学期，scheduled job 匹配当天生成胶囊报告）
+  school_engine_semester_end_1:
+    default: "1-31"
+  school_engine_semester_end_2:
+    default: "7-31"

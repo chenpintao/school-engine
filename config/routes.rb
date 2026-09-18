@@ -24,6 +24,9 @@ SchoolEngine::Engine.routes.draw do
 
   get "/school/directory" => "school_engine#directory"
   get "/school/directory.csv" => "school_engine#directory_export"
+  get "/school/timeline/:username" => "school_engine#timeline"
+  post "/school/feature-post" => "school_engine#feature_post"
+  post "/school/unfeature-post" => "school_engine#unfeature_post"
   post "/school/transfer-class" => "school_engine#transfer_class"
 
   # ---- SPA 页面 shell（由前端路由渲染实际内容）----

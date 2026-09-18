@@ -1,6 +1,7 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { ajax } from "discourse/lib/ajax";
 import SchoolJuniorClassModal from "discourse/plugins/school-engine/discourse/components/school-junior-class-modal";
+import SchoolFeatureButton from "discourse/plugins/school-engine/discourse/components/school-feature-button";
 
 export default {
   name: "school-engine",
@@ -98,15 +99,27 @@ export default {
       // school_hide_from_staff（参照 discourse-post-voting 的官方模式，
       // 后端经 add_permitted_post_create_param 放行，避免弃用的 meta_data 通道）
       api.serializeOnCreate("school_hide_from_staff", "schoolHideFromStaff");
+      // 表达空间回帖匿名：composer.schoolAnonymous → school_anonymous 请求参数
+      api.serializeOnCreate("school_anonymous", "schoolAnonymous");
+      // 班级通知：composer.schoolClassNotice → school_class_notice 请求参数
+      api.serializeOnCreate("school_class_notice", "schoolClassNotice");
+
+      // 帖子菜单：staff 精选/取消精选（新版 glimmer post menu DAG；组件内部按分类+回帖条件自渲染）
+      api.registerValueTransformer("post-menu-buttons", ({ value: dag, context }) => {
+        dag.add("school-feature", SchoolFeatureButton, {
+          after: context.firstButtonKey,
+        });
+      });
 
       const checked = "__school_junior_checked__";
 
       // 匿名帖：禁止点击头像/用户名跳转个人主页（全局只需注册一次，避免 onPageChange 累积监听器）
+      // 覆盖历史"匿名用户"与表达空间"匿名同学X"（原始链接与 URL 编码两种形态）
       document.addEventListener(
         "click",
         (e) => {
           const a = e.target.closest?.(
-            "a[href*='%E5%8C%BF%E5%90%8D%E7%94%A8%E6%88%B7'], a[href*='u/匿名用户']"
+            "a[href*='%E5%8C%BF%E5%90%8D%E7%94%A8%E6%88%B7'], a[href*='u/匿名用户'], a[href*='%E5%8C%BF%E5%90%8D%E5%90%8C%E5%AD%A6'], a[href*='u/匿名同学']"
           );
           if (a) {
             e.preventDefault();
@@ -119,6 +132,25 @@ export default {
       api.onPageChange(() => {
         // 登录/注册入口统一指向自定义页面（覆盖 header 按钮、/login /signup 路由、直接访问）
         const p = window.location.pathname;
+
+        // 班级圈群组页：非 staff 隐藏成员入口与人数（服务端 members 接口已 404，这里仅视觉隐藏）
+        const circleGroup = p.match(/^\/g\/((?:xx|cz)-\d{4}-)/);
+        const hideCircleMembers =
+          !!circleGroup && !api.getCurrentUser()?.staff;
+        document.body.classList.toggle("school-circle-group", hideCircleMembers);
+        if (hideCircleMembers) {
+          // 不依赖具体 DOM 类名：找到指向本班成员页的链接，连同其 tab 容器一起隐藏
+          requestAnimationFrame(() => {
+            document
+              .querySelectorAll('a[href^="/g/xx-"][href$="/members"], a[href^="/g/cz-"][href$="/members"]')
+              .forEach((link) => {
+                link.style.setProperty("display", "none", "important");
+                link
+                  .closest('li, [role="tab"], .navigation-tab, .d-button')
+                  ?.style.setProperty("display", "none", "important");
+              });
+          });
+        }
         if (p === "/login" || p === "/login/") {
           window.location.replace("/school/login");
           return;

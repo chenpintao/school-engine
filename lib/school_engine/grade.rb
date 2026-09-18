@@ -61,7 +61,7 @@ module SchoolEngine
       gy = fetch(user_or_fields, "graduation_year").to_i
 
       if fetch(user_or_fields, "status") == "离校"
-        return nil unless gy > 0 && cls.present?
+        return nil if gy <= 0 || cls.blank?
         return circle_display_name("xx", gy, cls)
       end
 

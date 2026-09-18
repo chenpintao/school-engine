@@ -11,7 +11,7 @@ module SchoolEngine
     skip_before_action :redirect_to_login_if_required, only: [:register_user]
 
     # staff 专属操作（含联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
-    before_action :ensure_staff, only: %i[directory_export]
+    before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
     before_action :ensure_school_admin, only: %i[admin_users admin_update_user admin_classes admin_fix_displays]
 
     CONTACT_KEYS = %w[phone real_email wechat qq other_social].freeze
@@ -43,7 +43,7 @@ module SchoolEngine
       RateLimiter.new(nil, "school-register:#{request.remote_ip}", 10, 1.hour).performed!
 
       identity = params[:identity].to_s
-      raise Discourse::InvalidParameters.new(:identity) unless %w[student teacher].include?(identity)
+      raise Discourse::InvalidParameters.new(:identity) if %w[student teacher].exclude?(identity)
 
       email = params[:email].to_s.strip.downcase
       username = params[:username].to_s.strip
@@ -72,6 +72,7 @@ module SchoolEngine
         teacher_name = params[:teacher_name].to_s.strip
         raise Discourse::InvalidParameters.new(:teacher_name) if teacher_name.blank?
         fields["real_name"] = teacher_name
+        fields["real_name_initials"] = sanitize_initials(params[:real_name_initials])
         fields["teacher_id_last4"] = params[:teacher_id_last4].to_s.strip
         fields["status"] = "教师"
       end
@@ -115,6 +116,8 @@ module SchoolEngine
       end
 
       current_user.custom_fields["real_name"] = rn
+      initials = sanitize_initials(params[:real_name_initials])
+      current_user.custom_fields["real_name_initials"] = initials if initials.present?
       current_user.save_custom_fields(true)
       DiscourseEvent.trigger(:user_updated, current_user)
       render json: success_json
@@ -145,11 +148,11 @@ module SchoolEngine
       contact = params[:contact] || {}
       visibility = params[:visibility] || {}
       contact.each do |k, v|
-        next unless CONTACT_KEYS.include?(k.to_s)
+        next if CONTACT_KEYS.exclude?(k.to_s)
         u.custom_fields["contact_#{k}"] = v.to_s.strip
       end
       visibility.each do |k, v|
-        next unless CONTACT_KEYS.include?(k.to_s)
+        next if CONTACT_KEYS.exclude?(k.to_s)
         u.custom_fields["contact_visibility_#{k}"] = (v == true || v == "true") ? "true" : "false"
       end
       if params.key?(:gender)
@@ -196,80 +199,165 @@ module SchoolEngine
       render json: { errors: [e.message] }, status: :forbidden
     end
 
-    # GET /school/directory.json —— 同学录（级/性别筛选 + 昵称/爱好独立搜索）
+    # GET /school/directory.json —— 同学录（找人工具）
+    # 统一搜索：真实姓名片段 / 拼音首字母 / 班级 / 届 / "2026届3班"组合；也兼容昵称
+    # 结果仅返回 昵称 + 届 + 班级，不暴露任何实名/学籍/联系方式字段
     def directory
-      level = params[:level].to_s
-      gender = params[:gender].to_s
-      username = params[:username].to_s.strip
-      hobby = params[:hobby].to_s.strip
-      include_graduates = params[:include_graduates] == "true"
-      limit = [params[:limit].to_i.positive? ? params[:limit].to_i : 20, 100].min
+      query = params[:q].to_s.strip
+      limit = [params[:limit].to_i.positive? ? params[:limit].to_i : 50, 100].min
 
-      q = User.human_users
-      q = q.where(id: UserCustomField.where(name: "enrollment_year").select(:user_id))
+      # 学生身份判定：有入学年份即视为学生（兼容 identity 字段引入前的老数据，教师无该字段）
+      scope =
+        User.human_users
+          .joins(
+            "INNER JOIN user_custom_fields school_ey ON school_ey.user_id = users.id AND school_ey.name = 'enrollment_year' AND school_ey.value <> ''",
+          )
+          .readonly(false)
+      scope = scope.where(id: directory_match_scope(query)) if query.present?
 
-      if level.present?
-        c = level.to_i
-        # 级：小学=入学年，初中=入学年+6 → 匹配 enrollment_year IN (level, level-6)
-        ey_ids =
-          UserCustomField
-            .where(name: "enrollment_year", value: [c.to_s, (c - 6).to_s])
-            .select(:user_id)
-        q = q.where(id: ey_ids)
-      end
-      if gender.present? && %w[男 女].include?(gender)
-        q = q.where(id: UserCustomField.where(name: "gender", value: gender).select(:user_id))
-      end
-      if username.present?
-        q = q.where("username_lower ILIKE ?", "%#{username.downcase}%")
-      end
-      if hobby.present?
-        q = q.where(
-          "id IN (SELECT user_id FROM user_custom_fields WHERE name = 'hobbies' AND value ILIKE ?)",
-          "%#{hobby}%",
-        )
-      end
-      unless include_graduates
-        reading_ids = UserCustomField.where(name: "status", value: "在读").select(:user_id)
-        q = q.where(id: reading_ids)
+      users = scope.order("username_lower ASC").limit(limit).to_a
+      render json: { users: users.map { |u| directory_user_json(u) } }
+    end
+
+    # GET /school/timeline/:username.json —— 个人时光胶囊（school_capsule 帖；强制排除匿名帖）
+    def timeline
+      user = User.find_by_username_or_email(params[:username])
+      raise Discourse::NotFound if user.nil?
+
+      posts =
+        Post
+          .joins(:topic)
+          .joins(
+            "JOIN post_custom_fields school_pcf_capsule ON school_pcf_capsule.post_id = posts.id AND school_pcf_capsule.name = 'school_capsule' AND school_pcf_capsule.value = 'true'",
+          )
+          .where(user_id: user.id, hidden: false, deleted_at: nil)
+          .where(topics: { deleted_at: nil, archived: false })
+          .where(
+            "posts.id NOT IN (SELECT post_id FROM post_custom_fields WHERE name = 'anonymous' AND value = 'true')",
+          )
+          .order(posts: { created_at: :desc })
+          .limit(100)
+
+      # 教师视角额外排除学生标记"不给老师看"主题（staff 不受限）
+      if !current_user&.staff? && SchoolEngine::Visibility.teacher?(current_user)
+        posts = posts.where("posts.topic_id NOT IN (#{timeline_hidden_sql})")
       end
 
-      users = q.includes(:user_profile, :user_option).order("username_lower ASC").limit(limit).to_a
-      result =
-        users.map do |u|
-          f = u.custom_fields
-          contact = {}
-          CONTACT_KEYS.each do |k|
-            v = f["contact_#{k}"]
-            next if v.blank?
-            contact[k] = v if self.class.contact_visible?(f, k)
-          end
-          ey = f["enrollment_year"].to_i
-          {
-            username: u.username,
-            avatar_template: u.avatar_template,
-            bio: u.user_profile&.bio_summary,
-            surname: f["real_name"].to_s.chars.first.to_s, # 只显示姓氏
-            level: f["junior_class"].present? ? ey + 6 : ey, # 级：小学=入学年，初中=入学年+6
-            gender: f["gender"],
-            hobbies: f["hobbies"].to_s.split(",").map(&:strip).reject(&:empty?),
-            contact: contact,
-          }
-        end
+      render json: { posts: posts.map { |p| timeline_post_json(p) } }
+    rescue Discourse::NotFound
+      render json: { errors: ["user not found"] }, status: :not_found
+    end
 
-      levels, genders =
-        User
-          .human_users
-          .where(id: UserCustomField.where(name: "enrollment_year").select(:user_id))
-          .reduce([[], []]) do |acc, u|
-            f = u.custom_fields
-            ey = f["enrollment_year"].to_i
-            acc[0] << (f["junior_class"].present? ? ey + 6 : ey)
-            acc[1] << f["gender"] if %w[男 女].include?(f["gender"])
-            acc
-          end
+    private
 
-      render json: { users: result, options: { levels: levels.uniq.sort, genders: genders.uniq } }
+    # 同学录条件解析 → user_id 关系（nil = 无条件）
+    def directory_match_scope(query)
+      # 组合："2026届3班" / "2026 3班" / "2026-3"
+      if (m = query.match(/\A\s*(\d{4})\s*[届级.\-\s]*\s*(\d{1,2})\s*班?\s*\z/))
+        return User.where(
+          id: cf_scope("graduation_year", m[1]),
+        ).where(id: class_scope(m[2]))
+      end
+
+      # 纯 4 位数字 → 届（毕业年份）
+      return cf_scope("graduation_year", query) if query.match?(/\A\d{4}\z/)
+
+      # "3班" / "3"（1-2 位数字）→ 班级
+      if (m = query.match(/\A\s*(\d{1,2})\s*班?\s*\z/))
+        return class_scope(m[1])
+      end
+
+      # 文本：真实姓名 / 拼音首字母前缀 / 昵称
+      like = "%#{query.downcase}%"
+      User.where(
+        "id IN (:name) OR id IN (:initials) OR username_lower ILIKE :like",
+        name: cf_ilike_scope("real_name", like),
+        initials: cf_scope("real_name_initials", "#{query.downcase}%", ilike: true),
+        like: like,
+      )
+    end
+
+    # 按 custom field 精确值取 user_id 子查询
+    def cf_scope(name, value, ilike: false)
+      rel = UserCustomField.where(name: name)
+      rel = ilike ? rel.where("value ILIKE ?", value) : rel.where(value: value)
+      rel.select(:user_id)
+    end
+
+    def cf_ilike_scope(name, value)
+      cf_scope(name, value, ilike: true)
+    end
+
+    # 班级匹配：class_name / junior_class 去"班"字后等值
+    def class_scope(class_digits)
+      UserCustomField
+        .where(name: %w[class_name junior_class])
+        .where("REPLACE(value, '班', '') = ?", class_digits)
+        .select(:user_id)
+    end
+
+    # 同学录结果序列化：严格白名单，仅 昵称 + 届 + 班级
+    def directory_user_json(u)
+      f = u.custom_fields
+      gy = f["graduation_year"].to_s
+      cls = f["junior_class"].presence || f["class_name"].to_s
+      cls = cls.strip
+      cohort = gy.match?(/\A\d{4}\z/) ? "#{gy}届" : ""
+      display = [cohort, cls].reject(&:blank?).join("·")
+      { username: u.username, cohort: cohort, class_name: cls, display: display }
+    end
+
+    # 拼音首字母白名单清洗（仅保留小写字母）
+    def sanitize_initials(value)
+      value.to_s.downcase.gsub(/[^a-z]/, "").first(40)
+    end
+
+    # "不给老师看"主题 id 子查询（供 timeline 教师视角过滤）
+    def timeline_hidden_sql
+      <<~SQL.squish
+        SELECT p.topic_id
+        FROM posts p
+        JOIN post_custom_fields pcf ON pcf.post_id = p.id
+        WHERE p.post_number = 1 AND pcf.name = 'hide_from_staff' AND pcf.value = 'true'
+      SQL
+    end
+
+    # 时光胶囊帖子序列化（不含匿名帖；匿名帖在查询层已排除）
+    def timeline_post_json(post)
+      {
+        id: post.id,
+        url: post.url,
+        excerpt: self.class.helpers.strip_tags(post.cooked.to_s).gsub(/\s+/, " ").strip.truncate(200),
+        topic_title: post.topic&.title,
+        like_count: post.like_count,
+        featured: post.custom_fields["school_featured"] == "true",
+        featured_at: post.custom_fields["school_featured_at"],
+        created_at: post.created_at,
+      }
+    end
+
+    public
+
+    # POST /school/feature-post.json —— staff 精选表达空间回帖（每日上限 + 系统私信 + 入时光胶囊）
+    def feature_post
+      post = Post.find(params[:post_id].to_i)
+      if SchoolEngine::Featured.feature!(post)
+        SchoolEngine::Messages.featured_post_notification!(post)
+        render json: success_json
+      else
+        render json: { errors: [I18n.t("school_engine.feature_already")] }, status: :conflict
+      end
+    rescue SchoolEngine::Featured::NotEligible
+      render json: { errors: [I18n.t("school_engine.feature_not_eligible")] }, status: :unprocessable_entity
+    rescue SchoolEngine::Featured::QuotaExceeded
+      render json: { errors: [I18n.t("school_engine.feature_quota")] }, status: :forbidden
+    end
+
+    # POST /school/unfeature-post.json —— staff 取消精选（释放当日名额，不通知）
+    def unfeature_post
+      post = Post.find(params[:post_id].to_i)
+      SchoolEngine::Featured.unfeature!(post)
+      render json: success_json
     end
 
     # POST /school/leave-school.json —— "我已离校"（小升初弹窗选项，小学毕业考去外校初中）
@@ -329,6 +417,16 @@ module SchoolEngine
         end
       end
 
+      # 真实姓名变更时同步拼音首字母（前端计算，服务端只做白名单字符清洗）
+      if params.key?(:real_name)
+        initials = sanitize_initials(params[:real_name_initials])
+        if initials.present?
+          u.custom_fields["real_name_initials"] = initials
+        else
+          u.custom_fields.delete("real_name_initials")
+        end
+      end
+
       u.custom_fields.delete("last_class_change") if params[:reset_cooldown] == "true"
 
       u.save_custom_fields(true)
@@ -365,6 +463,7 @@ module SchoolEngine
     # POST /school/admin-fix-displays.json —— 全量修正班级圈显示名（届数规则变更后可用）
     def admin_fix_displays
       SchoolEngine::ClassCircle.update_circle_display_names
+      SchoolEngine::Tags.ensure_tags!
       render json: success_json
     end
 
@@ -379,9 +478,12 @@ module SchoolEngine
       level = params[:level].to_s
       username = params[:username].to_s.strip
       hobby = params[:hobby].to_s.strip
+      query = params[:q].to_s.strip
 
       q = User.human_users
       q = q.where(id: UserCustomField.where(name: "enrollment_year").select(:user_id))
+      # 与同学录搜索框一致的统一查询（姓名/首字母/班级/届/组合）
+      q = q.where(id: directory_match_scope(query)) if query.present?
       if level.present?
         c = level.to_i
         ey_ids =
@@ -403,11 +505,11 @@ module SchoolEngine
       users = q.to_a
       require "csv"
       csv =
-        CSV.generate do |c|
-          c << %w[username 真实姓名 毕业年份 入学年份 班级 初中班级 状态 手机号 邮箱 微信 QQ 其他]
+        CSV.generate do |out|
+          out << %w[username 真实姓名 毕业年份 入学年份 班级 初中班级 状态 手机号 邮箱 微信 QQ 其他]
           users.each do |u|
             f = u.custom_fields
-            c << [
+            out << [
               u.username,
               f["real_name"],
               f["graduation_year"],
@@ -431,7 +533,7 @@ module SchoolEngine
       u = current_user
       new_cls = params[:class_name].to_s.strip
       raise Discourse::InvalidParameters.new(:class_name) if new_cls.blank?
-      unless %w[1班 2班 3班 4班 5班 6班].include?(new_cls)
+      if %w[1班 2班 3班 4班 5班 6班].exclude?(new_cls)
         raise Discourse::InvalidParameters.new(:class_name)
       end
 

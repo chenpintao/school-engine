@@ -9,6 +9,7 @@ import { ajax } from "discourse/lib/ajax";
 import DButton from "discourse/ui-kit/d-button";
 import { and, eq, gt, lt, not } from "discourse/truth-helpers";
 import { i18n } from "discourse-i18n";
+import { nameInitials } from "../lib/pinyin-initials";
 
 /**
  * 自定义注册向导（6 步：身份 → 账号 → 学籍 → 确认 → 实名 → 欢迎）。
@@ -196,6 +197,7 @@ export default class SchoolRegisterForm extends Component {
       body.class_name = this.className;
     } else {
       body.teacher_name = this.teacherName.trim();
+      body.real_name_initials = nameInitials(this.teacherName);
       body.teacher_id_last4 = this.teacherId.trim();
     }
     ajax("/school/register.json", { type: "POST", data: body })
@@ -223,7 +225,13 @@ export default class SchoolRegisterForm extends Component {
       return;
     }
     this.submitting = true;
-    ajax("/school/complete.json", { type: "POST", data: { real_name: this.realName.trim() } })
+    ajax("/school/complete.json", {
+      type: "POST",
+      data: {
+        real_name: this.realName.trim(),
+        real_name_initials: nameInitials(this.realName),
+      },
+    })
       .then(() => {
         this.submitting = false;
         this.step = 6;

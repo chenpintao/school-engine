@@ -5,3 +5,30 @@ en:
     school_engine_graduate_group: "Graduate group name (read-only access to historical class circles)"
     school_engine_anonymous_categories: "Categories (comma separated slugs) that allow anonymous posting, e.g. confess"
     school_engine_class_admin_group: "Class admin group name; members can use the school management APIs (empty = staff only)"
+    school_engine_expression_category: "School-wide expression space category slug (replaces the confession wall; old content is kept)"
+    school_engine_featured_per_day: "Maximum featured posts per calendar day (default 3)"
+    school_engine_capsule_like_threshold: "Like count threshold for the time capsule (default 10)"
+    school_engine_semester_end_1: "First semester end month-day (e.g. 1-31 means Jan 31)"
+    school_engine_semester_end_2: "Second semester end month-day (e.g. 7-31 means Jul 31)"
+  school_engine:
+    feature_already: "This reply has already been featured"
+    feature_not_eligible: "Only replies in the school-wide expression space can be featured"
+    feature_quota: "Today's feature quota has been used up"
+    pm:
+      featured_title: "Your reply was featured"
+      featured_body: |-
+        Your reply about "%{topic_title}" was featured. Nicely written.
+
+        %{url}
+      semester_title: "%{semester} Time Capsule"
+      semester_body: |-
+        This semester, %{count} of your replies were archived in the time capsule, including %{featured_count} featured replies.
+        Here is this semester's you, safely kept:
+
+        %{list}
+      graduation_title: "Graduation Time Capsule"
+      graduation_body: |-
+        Happy graduation. Here are %{count} archived moments from your school years, including %{featured_count} that were featured.
+        May these honest voices travel with you.
+
+        %{list}

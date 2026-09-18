@@ -12,6 +12,7 @@ import DModal from "discourse/ui-kit/d-modal";
 import DToggleSwitch from "discourse/ui-kit/d-toggle-switch";
 import { eq } from "discourse/truth-helpers";
 import { i18n } from "discourse-i18n";
+import { nameInitials } from "../lib/pinyin-initials";
 
 const STATUSES = ["在读", "毕业生", "离校"];
 const IDENTITIES = ["student", "teacher"];
@@ -193,6 +194,9 @@ export default class SchoolAdminForm extends Component {
     this.saving = true;
     const data = { user_id: this.editing.id, ...this.editForm };
     data.reset_cooldown = this.resetCooldown ? "true" : "false";
+    if (this.editForm.real_name?.trim()) {
+      data.real_name_initials = nameInitials(this.editForm.real_name);
+    }
     ajax("/school/admin-user.json", { type: "PUT", data })
       .then(() => {
         this.saving = false;

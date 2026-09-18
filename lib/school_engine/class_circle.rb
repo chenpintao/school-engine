@@ -25,7 +25,7 @@ module SchoolEngine
     def self.sync_for(user, now: Date.current)
       fields = UserCustomField.where(user_id: user.id).pluck(:name, :value).to_h
       gy = fields["graduation_year"].to_i
-      return unless gy > 0
+      return if gy <= 0
 
       d = gy - Grade.effective_year(now: now)
       cls =
@@ -179,6 +179,17 @@ module SchoolEngine
         user.save_custom_fields(true)
         fix_circle_display_name(user)
         notify(user, "恭喜毕业！你的账号和所有班级圈子已永久保留 🎓 欢迎以校友身份继续使用校园社区。")
+
+        # 毕业完整时光胶囊：汇总在校期间全部归档内容（含其匿名精选帖），私信发送
+        begin
+          posts =
+            SchoolEngine::Featured.capsule_posts_for(user, include_anonymous: true).to_a
+          SchoolEngine::Messages.graduation_capsule!(user, posts) if posts.any?
+        rescue => e
+          Rails.logger.warn(
+            "school-engine: 毕业时光胶囊发送失败 user=#{user.id}: #{e.message}",
+          )
+        end
       end
     end
 
@@ -322,6 +333,10 @@ module SchoolEngine
         cat.set_permissions(perms)
         cat.save!
       end
+
+      # 表达空间固定标签种子（幂等）
+      SchoolEngine::Tags.ensure_tags!
+
       { teachers: teachers, graduates: graduates }
     end
 

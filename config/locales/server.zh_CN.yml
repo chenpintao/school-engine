@@ -5,3 +5,30 @@ zh_CN:
     school_engine_graduate_group: "毕业生组名（历史班级圈只读权限）"
     school_engine_anonymous_categories: "支持匿名发帖的分类 slug（逗号分隔，如 confess）"
     school_engine_class_admin_group: "班级管理组名（该组成员可使用校园管理 API，留空则仅管理员）"
+    school_engine_expression_category: "全校表达空间分类 slug（改造原表白墙分类，旧内容保留）"
+    school_engine_featured_per_day: "每日精选上限（自然日，默认 3 条）"
+    school_engine_capsule_like_threshold: "进入时光胶囊的点赞数阈值（默认 10 赞）"
+    school_engine_semester_end_1: "第一学期末月-日（如 1-31 表示 1 月 31 日）"
+    school_engine_semester_end_2: "第二学期末月-日（如 7-31 表示 7 月 31 日）"
+  school_engine:
+    feature_already: "这条回帖已经精选过了"
+    feature_not_eligible: "只有全校表达空间的回帖可以被精选"
+    feature_quota: "今天的精选名额已用完"
+    pm:
+      featured_title: "你的回答被精选了"
+      featured_body: |-
+        你那条关于“%{topic_title}”的回答被精选了，写得真好。
+
+        %{url}
+      semester_title: "%{semester}时光胶囊"
+      semester_body: |-
+        这个学期你有 %{count} 条回答被时光收藏，其中 %{featured_count} 条被精选。
+        把这个学期的你，封存在这里：
+
+        %{list}
+      graduation_title: "毕业时光胶囊"
+      graduation_body: |-
+        毕业快乐。这里是你在校期间留下的 %{count} 条时光收藏，其中 %{featured_count} 条曾被精选。
+        愿这些真实的表达陪你走向下一段旅程。
+
+        %{list}

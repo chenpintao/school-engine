@@ -28,10 +28,20 @@ after_initialize do
   #   服务端在 post_created 钩子校验创建者身份后才落 post custom field；
   #   必须在 after_initialize 内调用：该 API 引用 Post 模型，激活阶段模型尚未加载）
   add_permitted_post_create_param(:school_hide_from_staff)
+  # 表达空间回帖级匿名：前端 composer.schoolAnonymous → school_anonymous 参数
+  add_permitted_post_create_param(:school_anonymous)
+  # 班级通知：staff 在班级圈发主题 → school_class_notice 参数
+  add_permitted_post_create_param(:school_class_notice)
 
   require_relative "lib/school_engine/grade"
   require_relative "lib/school_engine/class_circle"
   require_relative "lib/school_engine/anonymous"
+  require_relative "lib/school_engine/expression"
+  require_relative "lib/school_engine/tags"
+  require_relative "lib/school_engine/featured"
+  require_relative "lib/school_engine/messages"
+  require_relative "lib/school_engine/group_visibility"
+  require_relative "lib/school_engine/class_notice"
   require_relative "lib/school_engine/visibility"
 
   # ---- 用户自定义字段注册（必须在 after_initialize 内）----
@@ -39,7 +49,7 @@ after_initialize do
   %w[
     identity graduation_year enrollment_year class_name real_name status junior_class
     contact_phone contact_real_email contact_wechat contact_qq contact_other_social
-    gender hobbies teacher_id_last4
+    gender hobbies teacher_id_last4 real_name_initials
   ].each do |f|
     register_user_custom_field_type(f, :string)
   end
@@ -64,6 +74,12 @@ after_initialize do
 
   # ---- 路由（通过 Rails::Engine 挂载，让 app/controllers 自动 autoload）----
   Discourse::Application.routes.append { mount ::SchoolEngine::Engine, at: "/" }
+
+  # 自定义首页接管 "/"（服务端渲染：今日话题 + 精选回帖）；prepend 保证优先于原生 root
+  # 原生列表仍可通过 /latest、/categories 访问，/t/* /u/* 等路径不受影响
+  Discourse::Application.routes.prepend do
+    get "/" => "school_engine_home#index", as: :school_engine_root
+  end
 
   # ---- 事件钩子 ----
   on(:user_created) do |user|
@@ -91,8 +107,12 @@ after_initialize do
     begin
       changed = false
 
-      if SchoolEngine::Anonymous.post_anonymous?(post) && post.custom_fields["anonymous"] != "true"
+      # 表达空间回帖级匿名（学生、回帖、主动勾选才标记；OP 不可匿名）
+      # 旧 confess"整分类自动匿名"已废弃；历史匿名帖（无 anon_label）继续按"匿名用户"掩码
+      if SchoolEngine::Expression.post_wants_anonymous?(post, opts) &&
+         post.custom_fields["anonymous"] != "true"
         post.custom_fields["anonymous"] = "true"
+        SchoolEngine::Expression.assign_anon_label!(post)
         changed = true
       end
 
@@ -105,9 +125,34 @@ after_initialize do
         end
       end
 
+      # 班级通知：仅 staff + 班级圈分类 + 首帖生效，学生/越权标记直接忽略
+      notice_marked =
+        SchoolEngine::ClassNotice.wants_notice?(post, post.user, opts)
+      if notice_marked
+        post.custom_fields["class_notice"] = "true"
+        changed = true
+      end
+
       post.save_custom_fields(true) if changed
+
+      # 通知帖走标准置顶（pinned），失败不影响发帖
+      SchoolEngine::ClassNotice.pin!(post) if notice_marked
+
+      # 引用头掩码：引用匿名帖时清除 cooked 中的头像与真实姓名（跳过回调直接落库）
+      masked_cooked = SchoolEngine::Anonymous.mask_quote_headers(post)
+      post.update_columns(cooked: masked_cooked) if masked_cooked
     rescue => e
       Rails.logger.warn("school-engine: 帖子可见性标记失败 post=#{post&.id}: #{e.message}")
+    end
+  end
+
+  # 点赞达阈值：非匿名帖自动入时光胶囊（幂等）
+  on(:post_liked) do |post, _post_action|
+    next unless SiteSetting.school_engine_enabled
+    begin
+      SchoolEngine::Featured.auto_capsule_by_likes!(post)
+    rescue => e
+      Rails.logger.warn("school-engine: 时光胶囊点赞归档失败 post=#{post&.id}: #{e.message}")
     end
   end
 
@@ -124,6 +169,22 @@ after_initialize do
     ::TopicViewDetailsSerializer.prepend(SchoolEngine::Anonymous::TopicViewDetailsSerializerExtension)
     ::PostSerializer.prepend(SchoolEngine::Anonymous::PostSerializerExtension)
     ::PostRevisionSerializer.prepend(SchoolEngine::Anonymous::PostRevisionSerializerExtension)
+  end
+
+  # 精选：帖子 JSON 暴露 school_featured（staff 帖子菜单据此切换）
+  reloadable_patch do
+    ::PostSerializer.prepend(SchoolEngine::Featured::PostSerializerExtension)
+  end
+
+  # 班级通知：class_notice 帖显示发布者 real_name（BasicPost/Post 序列化）
+  reloadable_patch do
+    ::BasicPostSerializer.prepend(SchoolEngine::ClassNotice::BasicPostSerializerExtension)
+    ::PostSerializer.prepend(SchoolEngine::ClassNotice::PostSerializerExtension)
+  end
+
+  # 班级圈群组：非 staff 访问成员列表 404
+  reloadable_patch do
+    ::GroupsController.prepend(SchoolEngine::GroupVisibility::GroupsControllerExtension)
   end
 
   # ---- 匿名内容的全链路 SQL 过滤（prepend，热重载安全）----

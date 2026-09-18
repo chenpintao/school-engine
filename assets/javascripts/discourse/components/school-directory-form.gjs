@@ -5,71 +5,53 @@ import { service } from "@ember/service";
 import { Input } from "@ember/component";
 import { on } from "@ember/modifier";
 import { ajax } from "discourse/lib/ajax";
-import { concat } from "@ember/helper";
 import DButton from "discourse/ui-kit/d-button";
 import { LinkTo } from "@ember/routing";
-import { eq } from "discourse/truth-helpers";
+import { and, not } from "discourse/truth-helpers";
 import { i18n } from "discourse-i18n";
 
 /**
- * 同学录页面：级/性别筛选 + 昵称/爱好搜索，隐私设计不显示真实姓名与班级。
- * 管理员可导出 CSV（含全字段）。
+ * 同学录（找人工具）：统一搜索框。
+ * 支持：真实姓名片段、拼音首字母（zs）、班级（3班）、届（2026）、组合（2026届3班）。
+ * 结果只显示 昵称 + 届·班级，点击昵称进入个人主页。
+ * staff 可导出 CSV（独立入口，全字段）。
  */
 export default class SchoolDirectoryForm extends Component {
   @service currentUser;
 
-  @tracked level = "";
-  @tracked gender = "";
-  @tracked usernameQuery = "";
-  @tracked hobbyQuery = "";
-  @tracked includeGraduates = false;
+  @tracked query = "";
   @tracked loading = false;
+  @tracked searched = false;
   @tracked error = null;
   @tracked users = [];
-  @tracked options = { levels: [], genders: [] };
-
-  get levelOptions() {
-    return this.options.levels || [];
-  }
-
-  get genderOptions() {
-    return this.options.genders || [];
-  }
 
   get isStaff() {
     return this.currentUser?.staff;
   }
 
   get exportUrl() {
-    const params = new URLSearchParams();
-    if (this.level) params.set("level", this.level);
-    if (this.gender) params.set("gender", this.gender);
-    if (this.usernameQuery.trim()) params.set("username", this.usernameQuery.trim());
-    if (this.hobbyQuery.trim()) params.set("hobby", this.hobbyQuery.trim());
-    const qs = params.toString();
-    return "/school/directory.csv" + (qs ? "?" + qs : "");
+    const q = this.query.trim();
+    return "/school/directory.csv" + (q ? "?q=" + encodeURIComponent(q) : "");
   }
 
-  constructor() {
-    super(...arguments);
-    // 进入页面即加载列表 + 拉取所有筛选项
-    this.search();
+  @action
+  keydown(event) {
+    if (event.key === "Enter") {
+      this.search();
+    }
   }
 
   @action
   search() {
     this.loading = true;
     this.error = null;
+    this.searched = true;
     const params = new URLSearchParams();
-    if (this.level) params.set("level", this.level);
-    if (this.gender) params.set("gender", this.gender);
-    if (this.usernameQuery.trim()) params.set("username", this.usernameQuery.trim());
-    if (this.hobbyQuery.trim()) params.set("hobby", this.hobbyQuery.trim());
-    if (this.includeGraduates) params.set("include_graduates", "true");
+    const q = this.query.trim();
+    if (q) params.set("q", q);
     ajax("/school/directory.json?" + params.toString())
       .then((data) => {
         this.users = data.users || [];
-        if (data.options) this.options = data.options;
         this.loading = false;
       })
       .catch(() => {
@@ -78,72 +60,20 @@ export default class SchoolDirectoryForm extends Component {
       });
   }
 
-  @action
-  levelChanged(event) {
-    this.level = event.target.value;
-  }
-
-  @action
-  genderChanged(event) {
-    this.gender = event.target.value;
-  }
-
-  @action
-  graduatesChanged(event) {
-    this.includeGraduates = event.target.checked;
-  }
-
-  contactItems(contact) {
-    return Object.keys(contact || {}).map((k) => ({ key: k, value: contact[k] }));
-  }
-
-  avatarUrl(template, size = 64) {
-    return template ? template.replace("{size}", String(size)) : null;
-  }
-
   <template>
     <div class="school-directory-page">
       <h2>{{i18n "school_engine.directory_title"}}</h2>
 
-      {{#if this.error}}
-        <div class="school-auth-error">{{this.error}}</div>
-      {{/if}}
-
-      <div class="school-directory-filters">
-        <div class="school-field">
-          <label>{{i18n "school_engine.directory_level"}}</label>
-          <select value={{this.level}} {{on "change" this.levelChanged}}>
-            <option value="">{{i18n "school_engine.directory_all"}}</option>
-            {{#each this.levelOptions as |l|}}
-              <option value={{l}} selected={{eq this.level l}}>{{l}}级</option>
-            {{/each}}
-          </select>
-        </div>
-        <div class="school-field">
-          <label>{{i18n "school_engine.directory_gender"}}</label>
-          <select value={{this.gender}} {{on "change" this.genderChanged}}>
-            <option value="">{{i18n "school_engine.directory_all"}}</option>
-            {{#each this.genderOptions as |g|}}
-              <option value={{g}} selected={{eq this.gender g}}>{{g}}</option>
-            {{/each}}
-          </select>
-        </div>
-        <div class="school-field">
-          <label>{{i18n "school_engine.directory_username"}}</label>
-          <Input @type="text" @value={{this.usernameQuery}} placeholder={{i18n "school_engine.directory_username_ph"}} />
-        </div>
-        <div class="school-field">
-          <label>{{i18n "school_engine.directory_hobby"}}</label>
-          <Input @type="text" @value={{this.hobbyQuery}} placeholder={{i18n "school_engine.directory_hobby_ph"}} />
-        </div>
-        <div class="school-directory-check">
-          <label>
-            <input type="checkbox" checked={{this.includeGraduates}} {{on "change" this.graduatesChanged}} />
-            {{i18n "school_engine.directory_include_graduates"}}
-          </label>
-        </div>
+      <div class="school-directory-searchbar">
+        <Input
+          @type="text"
+          @value={{this.query}}
+          placeholder={{i18n "school_engine.directory_search_ph"}}
+          {{on "keydown" this.keydown}}
+        />
         <DButton @label="school_engine.directory_search" @type="primary" @action={{this.search}} @isLoading={{this.loading}} />
       </div>
+      <p class="school-directory-hint">{{i18n "school_engine.directory_search_hint"}}</p>
 
       {{#if this.isStaff}}
         <p class="school-directory-export">
@@ -151,43 +81,28 @@ export default class SchoolDirectoryForm extends Component {
         </p>
       {{/if}}
 
+      {{#if this.error}}
+        <div class="school-auth-error">{{this.error}}</div>
+      {{/if}}
+
       <div class="school-directory-results">
         {{#each this.users as |u|}}
           <div class="school-directory-card">
-            <LinkTo @route="user" @model={{u.username}} class="school-directory-user-link">
-              {{#if u.avatar_template}}
-                <img class="school-directory-avatar" src={{this.avatarUrl u.avatar_template}} alt="" />
-              {{/if}}
-            </LinkTo>
             <div class="school-directory-info">
               <div class="school-directory-name">
                 <LinkTo @route="user" @model={{u.username}} class="school-directory-username-link">
                   <span class="school-directory-username">{{u.username}}</span>
                 </LinkTo>
-                <span class="school-directory-grade">{{u.level}}级</span>
-                {{#if u.gender}}<span class="school-directory-gender">{{u.gender}}</span>{{/if}}
+                {{#if u.display}}
+                  <span class="school-directory-grade">{{u.display}}</span>
+                {{/if}}
               </div>
-              {{#if u.hobbies.length}}
-                <div class="school-directory-tags">
-                  {{#each u.hobbies as |h|}}
-                    <span class="school-directory-tag">{{h}}</span>
-                  {{/each}}
-                </div>
-              {{/if}}
-              {{#if u.bio}}<p class="school-directory-bio">{{u.bio}}</p>{{/if}}
-              {{#if u.contact}}
-                <div class="school-directory-contact">
-                  {{#each (this.contactItems u.contact) as |item|}}
-                    <span class="school-directory-contact-item">{{i18n (concat "school_engine.contact_" item.key)}}: {{item.value}}</span>
-                  {{/each}}
-                </div>
-              {{/if}}
             </div>
           </div>
         {{else}}
-          {{#unless this.loading}}
+          {{#if (and this.searched (not this.loading))}}
             <p class="school-directory-empty">{{i18n "school_engine.directory_empty"}}</p>
-          {{/unless}}
+          {{/if}}
         {{/each}}
       </div>
     </div>

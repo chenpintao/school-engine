@@ -1,6 +1,9 @@
 {
   "name": "school-engine",
   "private": true,
+  "dependencies": {
+    "pinyin-pro": "^5.8.1"
+  },
   "devDependencies": {
     "@discourse/lint-configs": "3.2.0",
     "@glint/ember-tsc": "1.8.11",

@@ -9,12 +9,17 @@ import { i18n } from "discourse-i18n";
 /**
  * 原生首页（discovery /latest）顶部的「今日话题 + 精选回答」区块。
  * 不接管 "/"、不自绘页面框架——侧边栏、顶部导航、话题列表全部沿用 Discourse 原生，
- * 本组件只通过 discovery-list-container-top outlet 注入到原生列表上方；
- * 数据来自 GET /school/home.json。仅用核心已验证模块（ajax / i18n / render-modifiers），
- * 样式只引用 DC CSS 变量，避免任何未验证的新模块导入拖垮整个插件 bundle。
+ * 本组件只通过 discovery-above outlet（每个 discovery 页面只渲染一次，不会随
+ * 无限滚动/翻页重复挂载）注入到列表上方；数据来自 GET /school/home.json。
+ * 另加模块级单实例保护：任何情况下同屏只允许一个区块渲染，防止 outlet 行为变化导致堆叠。
+ * 仅用核心已验证模块（ajax / i18n / render-modifiers），样式只引用 DC CSS 变量。
  */
+let liveDigestCount = 0;
+
 export default class SchoolHomeDigest extends Component {
   @service router;
+  isCounted = false;
+  @tracked isLive = false;
   @tracked dailyTopic = null;
   @tracked featuredPosts = [];
   @tracked fallback = false;
@@ -26,6 +31,7 @@ export default class SchoolHomeDigest extends Component {
 
   get showBlock() {
     return (
+      this.isLive &&
       this.onLatest &&
       this.loaded &&
       (this.dailyTopic || this.featuredPosts.length > 0)
@@ -33,9 +39,13 @@ export default class SchoolHomeDigest extends Component {
   }
 
   load() {
-    if (!this.onLatest) {
+    // 只放行第一个挂载的实例；重复 outlet 实例静默不渲染，避免首页区块堆叠
+    liveDigestCount += 1;
+    this.isCounted = true;
+    if (liveDigestCount !== 1 || !this.onLatest) {
       return;
     }
+    this.isLive = true;
     ajax("/school/home.json")
       .then((data) => {
         this.dailyTopic = data.daily_topic;
@@ -47,6 +57,13 @@ export default class SchoolHomeDigest extends Component {
         // 首页区块失败不影响原生 latest 列表
         this.loaded = true;
       });
+  }
+
+  willDestroy() {
+    super.willDestroy(...arguments);
+    if (this.isCounted) {
+      liveDigestCount = Math.max(0, liveDigestCount - 1);
+    }
   }
 
   <template>

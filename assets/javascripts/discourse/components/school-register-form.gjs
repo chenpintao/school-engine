@@ -1,6 +1,7 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
+import { service } from "@ember/service";
 import { Input } from "@ember/component";
 import { on } from "@ember/modifier";
 import { fn } from "@ember/helper";
@@ -14,6 +15,8 @@ import { i18n } from "discourse-i18n";
  * 邮箱不验证，注册后直接激活并自动加入班级圈。
  */
 export default class SchoolRegisterForm extends Component {
+  @service siteSettings;
+
   @tracked step = 1;
   @tracked identity = "student";
   @tracked submitting = false;
@@ -39,6 +42,15 @@ export default class SchoolRegisterForm extends Component {
 
   // 实名
   @tracked realName = "";
+
+  get minPasswordLength() {
+    // 与后端 register_user 一致：SiteSetting.min_password_length
+    return parseInt(this.siteSettings.min_password_length, 10) || 8;
+  }
+
+  get passwordHint() {
+    return i18n("school_engine.password_hint", { count: this.minPasswordLength });
+  }
 
   get nowYear() {
     return new Date().getFullYear();
@@ -140,8 +152,10 @@ export default class SchoolRegisterForm extends Component {
         this.error = i18n("school_engine.err_username_length");
         return;
       }
-      if (this.password.length < 8) {
-        this.error = i18n("school_engine.err_password_short");
+      if (this.password.length < this.minPasswordLength) {
+        this.error = i18n("school_engine.err_password_short", {
+          count: this.minPasswordLength,
+        });
         return;
       }
       if (this.password !== this.password2) {
@@ -316,7 +330,7 @@ export default class SchoolRegisterForm extends Component {
           <div class="school-field">
             <label>{{i18n "school_engine.password"}}</label>
             <Input @type="password" @value={{this.password}} autocomplete="new-password" />
-            <p class="school-hint">{{i18n "school_engine.password_hint"}}</p>
+            <p class="school-hint">{{this.passwordHint}}</p>
           </div>
           <div class="school-field">
             <label>{{i18n "school_engine.confirm_password"}}</label>

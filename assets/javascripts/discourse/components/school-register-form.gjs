@@ -1,7 +1,6 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
-import { service } from "@ember/service";
 import { Input } from "@ember/component";
 import { on } from "@ember/modifier";
 import { fn } from "@ember/helper";
@@ -15,13 +14,13 @@ import { i18n } from "discourse-i18n";
  * 邮箱不验证，注册后直接激活并自动加入班级圈。
  */
 export default class SchoolRegisterForm extends Component {
-  @service router;
-
   @tracked step = 1;
   @tracked identity = "student";
   @tracked submitting = false;
   @tracked error = null;
   @tracked registered = false;
+  // 注册成功后服务端返回的用户名（服务端已 log_on_user 下发会话 cookie）
+  @tracked registeredUsername = "";
 
   // 账号字段
   @tracked email = "";
@@ -199,9 +198,10 @@ export default class SchoolRegisterForm extends Component {
       body.teacher_id_last4 = this.teacherId.trim();
     }
     ajax("/school/register.json", { type: "POST", data: body })
-      .then(() => {
+      .then((data) => {
         this.submitting = false;
         this.registered = true;
+        this.registeredUsername = data.username || "";
         if (this.isStudent) {
           this.step = 5; // 学生进入实名步骤（账号已创建并自动登录）
         } else {
@@ -241,7 +241,12 @@ export default class SchoolRegisterForm extends Component {
 
   @action
   goProfile() {
-    this.router.transitionTo("school-profile");
+    // 整页跳转：让 Ember 重新引导并识别 register 阶段下发的登录会话，
+    // 落到 DC 原生个人资料页（插件的资料/改密码嵌入都挂在该页）。
+    const username = this.registeredUsername || this.username.trim();
+    window.location.href = username
+      ? `/u/${username}/preferences/profile`
+      : "/school/profile";
   }
 
   @action

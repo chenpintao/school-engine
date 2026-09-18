@@ -16,6 +16,7 @@ SchoolEngine::Engine.routes.draw do
   get "/school/manage" => "school_engine_pages#manage", constraints: { format: /html/ }
 
   # ---- 业务 API ----
+  get "/school/home" => "school_engine#home"
   get "/school/junior-class-status" => "school_engine#junior_class_status"
   post "/school/select-junior-class" => "school_engine#select_junior_class"
 

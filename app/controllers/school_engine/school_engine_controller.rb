@@ -8,13 +8,19 @@ module SchoolEngine
 
     requires_login
     # login_required=true 时未登录 JSON/XHR 会被全局拦截，注册接口必须放行
-    skip_before_action :redirect_to_login_if_required, only: [:register_user]
+    skip_before_action :redirect_to_login_if_required, only: %i[register_user home]
+    skip_before_action :ensure_logged_in, only: :home
 
     # staff 专属操作（含联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
     before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
     before_action :ensure_school_admin, only: %i[admin_users admin_update_user admin_classes admin_fix_displays]
 
     CONTACT_KEYS = %w[phone real_email wechat qq other_social].freeze
+
+    # GET /school/home.json —— 原生首页（discovery latest）上方区块数据：今日话题 + 精选回帖
+    def home
+      render json: { daily_topic: daily_topic, featured_posts: featured_posts, fallback: @fallback }
+    end
 
     # GET /school/junior-class-status.json
     def junior_class_status
@@ -309,6 +315,97 @@ module SchoolEngine
       cohort = gy.match?(/\A\d{4}\z/) ? "#{gy}届" : ""
       display = [cohort, cls].reject(&:blank?).join("·")
       { username: u.username, cohort: cohort, class_name: cls, display: display }
+    end
+
+    # ---- 原生首页区块数据（今日话题 + 精选回帖）----
+
+    def expression_category
+      @expression_category ||= SchoolEngine::Expression.category
+    end
+
+    # 排除学生标记"不给老师看"的主题（首页区块面向包括教师的所有人）
+    def home_hidden_from_staff_sql
+      <<~SQL.squish
+        SELECT p.topic_id
+        FROM posts p
+        JOIN post_custom_fields pcf ON pcf.post_id = p.id
+        WHERE p.post_number = 1 AND pcf.name = 'hide_from_staff' AND pcf.value = 'true'
+      SQL
+    end
+
+    def expression_topics
+      return Topic.none unless expression_category
+      Topic
+        .where(category_id: expression_category.id, deleted_at: nil, archived: false, visible: true)
+        .where("topics.id NOT IN (#{home_hidden_from_staff_sql})")
+    end
+
+    # 今日话题：topic cf daily_topic=今日（预留）→ 表达空间 staff 创建的最新主题
+    def daily_topic
+      topic =
+        expression_topics.where(
+          id: TopicCustomField.where(name: "daily_topic", value: Date.today.iso8601).select(:topic_id),
+        ).order(created_at: :desc).first
+      topic ||=
+        expression_topics.where(user_id: User.where("admin = TRUE OR moderator = TRUE"))
+          .order(created_at: :desc).first
+      return nil unless topic
+
+      op = topic.first_post
+      {
+        title: topic.title,
+        url: topic.relative_url,
+        excerpt: op ? home_excerpt(op.cooked, 220) : "",
+      }
+    end
+
+    # 当日精选；当天没有则回退最近一批精选（区块永不空壳）
+    def featured_posts
+      limit = [SiteSetting.school_engine_featured_per_day.to_i, 1].max
+      now = Time.zone.now
+      start_iso = now.beginning_of_day.utc.iso8601
+      finish_iso = now.end_of_day.utc.iso8601
+
+      base =
+        Post
+          .joins(:topic)
+          .joins(
+            "JOIN post_custom_fields school_pcf_featured ON school_pcf_featured.post_id = posts.id AND school_pcf_featured.name = 'school_featured'",
+          )
+          .joins(
+            "JOIN post_custom_fields school_pcf_at ON school_pcf_at.post_id = posts.id AND school_pcf_at.name = 'school_featured_at'",
+          )
+          .where(topic_id: expression_topics.select(:id))
+          .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
+          .where("posts.post_number > 1")
+
+      posts =
+        base.where("school_pcf_at.value >= ? AND school_pcf_at.value < ?", start_iso, finish_iso)
+          .order("school_pcf_at.value DESC").limit(limit).to_a
+      if posts.empty?
+        @fallback = true
+        posts = base.order("school_pcf_at.value DESC").limit(limit).to_a
+      else
+        @fallback = false
+      end
+
+      posts.map { |post| present_featured(post) }
+    end
+
+    def present_featured(post)
+      anon = post.custom_fields["anonymous"] == "true"
+      {
+        url: post.url,
+        excerpt: home_excerpt(post.cooked, 200),
+        like_count: post.like_count,
+        anonymous: anon,
+        author_name: anon ? SchoolEngine::Anonymous.display_name_for(post) : post.user&.username,
+      }
+    end
+
+    def home_excerpt(cooked, length)
+      text = self.class.helpers.strip_tags(cooked.to_s).gsub(/\s+/, " ").strip
+      CGI.unescapeHTML(text).truncate(length)
     end
 
     # "不给老师看"主题 id 子查询（供 timeline 教师视角过滤）

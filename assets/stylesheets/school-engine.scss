@@ -878,3 +878,131 @@ body.school-circle-group {
     font-size: var(--font-down-1);
   }
 }
+
+/* 原生首页（discovery latest）上方的今日话题 + 精选回答区块：仅做排版，颜色/圆角全部沿用 DC 变量 */
+.school-home-digest {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1rem;
+
+  .school-digest-section {
+    background: var(--secondary);
+    border: 1px solid var(--primary-low);
+    border-radius: var(--d-radius, 8px);
+    padding: 1rem 1.25rem;
+  }
+
+  .school-digest-heading {
+    margin: 0 0 0.65rem;
+    font-size: var(--font-down-1);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--primary-medium);
+  }
+
+  .school-digest-section.school-digest-topic {
+    background: var(--highlight-bg, var(--primary-very-low));
+  }
+
+  .school-digest-topic-title {
+    margin: 0;
+    font-size: var(--font-up-2);
+    line-height: 1.4;
+
+    a {
+      color: var(--primary);
+    }
+  }
+
+  .school-digest-topic-excerpt {
+    margin: 0.5rem 0 0;
+    color: var(--primary-high, var(--primary-medium));
+    font-size: var(--font-down-1);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .school-digest-topic-join {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    margin-top: 0.75rem;
+    color: var(--tertiary);
+    font-size: var(--font-down-1);
+    font-weight: 700;
+
+    .d-icon {
+      margin-right: 0;
+    }
+  }
+
+  .school-digest-fallback {
+    margin: 0 0 0.6rem;
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+  }
+
+  .school-digest-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .school-digest-item {
+    padding: 0.65rem 0;
+    border-top: 1px solid var(--primary-low);
+
+    &:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+  }
+
+  .school-digest-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.2rem;
+    font-size: var(--font-down-2);
+    color: var(--primary-medium);
+  }
+
+  .school-digest-item-author {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 700;
+    color: var(--primary-high, var(--primary));
+
+    .d-icon {
+      color: var(--primary-medium);
+    }
+  }
+
+  .school-digest-item-likes {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+
+    .d-icon {
+      color: var(--primary-high);
+    }
+  }
+
+  .school-digest-item-excerpt {
+    display: block;
+    color: var(--primary-high, var(--primary));
+    font-size: var(--font-down-1);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}

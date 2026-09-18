@@ -76,11 +76,8 @@ after_initialize do
   # ---- 路由（通过 Rails::Engine 挂载，让 app/controllers 自动 autoload）----
   Discourse::Application.routes.append { mount ::SchoolEngine::Engine, at: "/" }
 
-  # 自定义首页接管 "/"（服务端渲染：今日话题 + 精选回帖）；prepend 保证优先于原生 root
-  # 原生列表仍可通过 /latest、/categories 访问，/t/* /u/* 等路径不受影响
-  Discourse::Application.routes.prepend do
-    get "/" => "school_engine_home#index", as: :school_engine_root
-  end
+  # 首页保持 Discourse 原生 discovery（/ → latest）；
+  # "今日话题 + 精选回帖"通过 above-discovery-list-container outlet 以原生组件注入。
 
   # ---- 事件钩子 ----
   on(:user_created) do |user|

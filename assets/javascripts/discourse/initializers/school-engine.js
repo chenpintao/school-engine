@@ -7,8 +7,9 @@ export default {
   name: "school-engine",
   initialize() {
     withPluginApi("1.13.0", (api) => {
-      // 同学录/班级圈：左侧菜单（sidebar）入口（必须传 panelKey "main"，否则 section 被静默丢弃）
-      api.addSidebarSection(
+        const currentUser = api.getCurrentUser();
+        // 同学录/班级圈：左侧菜单（sidebar）入口（必须传 panelKey "main"，否则 section 被静默丢弃）
+        api.addSidebarSection(
         (BaseCustomSidebarSection, BaseCustomSidebarSectionLink) => {
           return class extends BaseCustomSidebarSection {
             get name() {
@@ -79,6 +80,71 @@ export default {
                   return "users";
                 }
               })(),
+              ...(currentUser
+                ? [
+                    new (class extends BaseCustomSidebarSectionLink {
+                      get name() {
+                        return "school-me";
+                      }
+                      get route() {
+                        return "school-profile";
+                      }
+                      get title() {
+                        return "我的";
+                      }
+                      get text() {
+                        return "我的";
+                      }
+                      get prefixType() {
+                        return "icon";
+                      }
+                      get prefixValue() {
+                        return "user";
+                      }
+                    })(),
+                  ]
+                : [
+                    new (class extends BaseCustomSidebarSectionLink {
+                      get name() {
+                        return "school-login";
+                      }
+                      get route() {
+                        return "school-login";
+                      }
+                      get title() {
+                        return "登录";
+                      }
+                      get text() {
+                        return "登录";
+                      }
+                      get prefixType() {
+                        return "icon";
+                      }
+                      get prefixValue() {
+                        return "sign-in-alt";
+                      }
+                    })(),
+                    new (class extends BaseCustomSidebarSectionLink {
+                      get name() {
+                        return "school-register";
+                      }
+                      get route() {
+                        return "school-register";
+                      }
+                      get title() {
+                        return "注册";
+                      }
+                      get text() {
+                        return "注册";
+                      }
+                      get prefixType() {
+                        return "icon";
+                      }
+                      get prefixValue() {
+                        return "user-plus";
+                      }
+                    })(),
+                  ]),
             ];
           }
         };

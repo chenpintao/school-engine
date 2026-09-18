@@ -31,13 +31,27 @@ export default class SchoolLoginForm extends Component {
       type: "POST",
       data: { login: this.loginName.trim(), password: this.password },
     })
-      .then(() => {
+      .then((result) => {
         this.submitting = false;
+        // 注意：DC 的 POST /session 登录失败（密码错/未激活/被暂停/未审批）
+        // 同样返回 HTTP 200，仅在响应体里带 error，此时并未下发 _t cookie。
+        // 只看状态码会"假登录"：跳转后仍是匿名状态，必须检查响应体。
+        if (result?.error) {
+          this.error = result.error;
+          return;
+        }
+        // 需要二次验证（2FA/安全密钥）时同样不会建立会话，不能直接跳转
+        if (result?.second_factor_required || result?.security_key_required) {
+          this.error = i18n("school_engine.err_second_factor");
+          return;
+        }
+        // 仅在服务端确认真正登录成功时才跳转，DC 会随响应下发 _t cookie
         window.location.href = "/";
       })
-      .catch(() => {
+      .catch((e) => {
         this.submitting = false;
-        this.error = i18n("school_engine.err_login");
+        // 429 限流、403（本地登录关闭）等非 200 响应，尽量展示服务端文案
+        this.error = e.jqXHR?.responseJSON?.error || i18n("school_engine.err_login");
       });
   }
 

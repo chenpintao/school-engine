@@ -61,6 +61,7 @@ en:
       err_teacher_name: "Please enter your real name"
       err_realname: "Please enter your real name"
       err_login: "Login failed: wrong username or password"
+      err_second_factor: "This account requires two-factor authentication. Please contact an administrator to finish logging in."
       profile_school_title: "My school record"
       profile_grade: "Grade"
       profile_status: "Status"

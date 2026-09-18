@@ -3,7 +3,7 @@
 module SchoolEngine
   # 注册/登录/个人资料/同学录/管理页：渲染 SPA shell，实际内容由前端插件路由渲染
   class SchoolEnginePagesController < ::ApplicationController
-    requires_plugin PLUGIN_NAME
+    requires_plugin "school-engine"
 
     # 登录/注册页允许匿名访问；其余页面（profile/directory/admin）仍走原生登录校验
     skip_before_action :check_xhr, :redirect_to_login_if_required, only: %i[register login]

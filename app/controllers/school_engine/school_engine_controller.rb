@@ -3,7 +3,7 @@
 module SchoolEngine
   # 校园社区业务 API：注册 / 实名 / 资料 / 改密码 / 同学录 / 转班 / 管理员调整 / 小升初
   class SchoolEngineController < ::ApplicationController
-    requires_plugin PLUGIN_NAME
+    requires_plugin "school-engine"
     wrap_parameters false
 
     requires_login

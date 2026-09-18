@@ -3,7 +3,7 @@
 # 自定义首页（服务端渲染，非 Ember 壳）：今日话题 + 当日精选回帖
 # 路由经 Discourse::Application.routes.prepend 接管 "/"，原生列表移至 /latest
 class SchoolEngineHomeController < ::ApplicationController
-  requires_plugin PLUGIN_NAME
+  requires_plugin "school-engine"
 
   # 站点开启 login_required 时，由本控制器自行重定向到自定义登录页（不走 Ember 登录）
   skip_before_action :redirect_to_login_if_required, only: :index

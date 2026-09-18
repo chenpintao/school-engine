@@ -2,7 +2,7 @@
   "name": "school-engine",
   "private": true,
   "dependencies": {
-    "pinyin-pro": "^5.8.1"
+    "pinyin-pro": "^3.29.4"
   },
   "devDependencies": {
     "@discourse/lint-configs": "3.2.0",

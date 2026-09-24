@@ -1,6 +1,5 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
-import { didInsert } from "@ember/render-modifiers/modifiers/did-insert";
 import { ajax } from "discourse/lib/ajax";
 import { i18n } from "discourse-i18n";
 
@@ -21,6 +20,12 @@ function localIso(date) {
 export default class SchoolMoodHeatmap extends Component {
   @tracked moodMap = {};
   @tracked loaded = false;
+
+  // 构造时即发起加载（无需 DOM 元素），避免依赖 render-modifiers。
+  constructor(owner, args) {
+    super(owner, args);
+    this.load();
+  }
 
   get username() {
     return this.args.user?.username;
@@ -83,7 +88,7 @@ export default class SchoolMoodHeatmap extends Component {
   }
 
   <template>
-    <section class="school-mood-heatmap" {{didInsert this.load}}>
+    <section class="school-mood-heatmap">
       {{#if this.hasMood}}
         <h2 class="school-mood-heatmap-heading">
           {{i18n "school_engine.mood_heatmap_title"}}

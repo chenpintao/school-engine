@@ -5,7 +5,6 @@ import { service } from "@ember/service";
 import { on } from "@ember/modifier";
 import { fn } from "@ember/helper";
 import { and } from "discourse/truth-helpers";
-import { didInsert } from "@ember/render-modifiers/modifiers/did-insert";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import dIcon from "discourse/helpers/d-icon";
@@ -31,6 +30,12 @@ const MOODS = [
 export default class SchoolHomeFeed extends Component {
   @service router;
   @service currentUser;
+
+  // 构造时即发起加载（无需 DOM 元素），避免依赖 render-modifiers。
+  constructor(owner, args) {
+    super(owner, args);
+    this.load();
+  }
 
   @tracked loaded = false;
   @tracked featured = [];
@@ -121,7 +126,6 @@ export default class SchoolHomeFeed extends Component {
     <div
       class="school-home"
       data-live={{if this.isLive "true" "false"}}
-      {{didInsert this.load}}
     >
       <header class="school-home-header">
         <h1 class="school-home-greeting">{{this.greeting}}</h1>

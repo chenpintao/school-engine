@@ -5,7 +5,6 @@ import { service } from "@ember/service";
 import { on } from "@ember/modifier";
 import { fn } from "@ember/helper";
 import { not, eq } from "discourse/truth-helpers";
-import { didInsert } from "@ember/render-modifiers/modifiers/did-insert";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import DButton from "discourse/ui-kit/d-button";
@@ -34,6 +33,12 @@ const FEATURE_KEYS = [
 
 export default class SchoolConfigForm extends Component {
   @service site;
+
+  // 构造时即发起加载（无需 DOM 元素），避免依赖 render-modifiers。
+  constructor(owner, args) {
+    super(owner, args);
+    this.load();
+  }
   @tracked loaded = false;
   @tracked loadError = false;
   @tracked saving = false;
@@ -153,7 +158,7 @@ export default class SchoolConfigForm extends Component {
   }
 
   <template>
-    <div class="school-config" {{didInsert this.load}}>
+    <div class="school-config">
       <header class="school-config-header">
         <h1 class="school-config-title">{{i18n "school_engine.config_title"}}</h1>
         <p class="school-config-subtitle">{{i18n "school_engine.config_subtitle"}}</p>

@@ -9,173 +9,72 @@ export default {
   initialize() {
     withPluginApi("1.13.0", (api) => {
         const currentUser = api.getCurrentUser();
-        // 同学录/班级圈：左侧菜单（sidebar）入口（必须传 panelKey "main"，否则 section 被静默丢弃）
-        api.addSidebarSection(
-        (BaseCustomSidebarSection, BaseCustomSidebarSectionLink) => {
-          return class extends BaseCustomSidebarSection {
+
+        // 侧边栏链接工厂：所有链接同构（name/text/title + icon 前缀 + route 或 href）
+        const buildLink = (BaseLink, def) =>
+          class extends BaseLink {
             get name() {
-              return "school";
+              return def.name;
             }
             get text() {
-              return "校园";
+              return def.text;
             }
-            get links() {
-            return [
-              new (class extends BaseCustomSidebarSectionLink {
-                get name() {
-                  return "school-directory";
-                }
-                get route() {
-                  return "school-directory";
-                }
-                get title() {
-                  return "同学录";
-                }
-                get text() {
-                  return "同学录";
-                }
-                get prefixType() {
-                  return "icon";
-                }
-                get prefixValue() {
-                  return "address-book";
-                }
-              })(),
-              new (class extends BaseCustomSidebarSectionLink {
-                get name() {
-                  return "school-classes";
-                }
-                get route() {
-                  return "groups";
-                }
-                get title() {
-                  return "班级圈";
-                }
-                get text() {
-                  return "班级圈";
-                }
-                get prefixType() {
-                  return "icon";
-                }
-                get prefixValue() {
-                  return "user-group";
-                }
-              })(),
-              new (class extends BaseCustomSidebarSectionLink {
-                get name() {
-                  return "school-manage";
-                }
-                get route() {
-                  return "school-manage";
-                }
-                get title() {
-                  return "班级管理";
-                }
-                get text() {
-                  return "班级管理";
-                }
-                get prefixType() {
-                  return "icon";
-                }
-                get prefixValue() {
-                  return "users";
-                }
-              })(),
-              ...(currentUser?.staff
-                ? [
-                    new (class extends BaseCustomSidebarSectionLink {
-                      get name() {
-                        return "school-config";
-                      }
-                      get route() {
-                        return "school-config";
-                      }
-                      get title() {
-                        return "插件配置";
-                      }
-                      get text() {
-                        return "插件配置";
-                      }
-                      get prefixType() {
-                        return "icon";
-                      }
-                      get prefixValue() {
-                        return "gear";
-                      }
-                    })(),
-                  ]
-                : []),
-              ...(currentUser
-                ? [
-                    new (class extends BaseCustomSidebarSectionLink {
-                      get name() {
-                        return "school-me";
-                      }
-                      get href() {
-                        return `/u/${currentUser.username}/preferences/profile`;
-                      }
-                      get title() {
-                        return "我的";
-                      }
-                      get text() {
-                        return "我的";
-                      }
-                      get prefixType() {
-                        return "icon";
-                      }
-                      get prefixValue() {
-                        return "user";
-                      }
-                    })(),
-                  ]
-                : [
-                    new (class extends BaseCustomSidebarSectionLink {
-                      get name() {
-                        return "school-login";
-                      }
-                      get route() {
-                        return "school-login";
-                      }
-                      get title() {
-                        return "登录";
-                      }
-                      get text() {
-                        return "登录";
-                      }
-                      get prefixType() {
-                        return "icon";
-                      }
-                      get prefixValue() {
-                        return "sign-in-alt";
-                      }
-                    })(),
-                    new (class extends BaseCustomSidebarSectionLink {
-                      get name() {
-                        return "school-register";
-                      }
-                      get route() {
-                        return "school-register";
-                      }
-                      get title() {
-                        return "注册";
-                      }
-                      get text() {
-                        return "注册";
-                      }
-                      get prefixType() {
-                        return "icon";
-                      }
-                      get prefixValue() {
-                        return "user-plus";
-                      }
-                    })(),
-                  ]),
+            get title() {
+              return def.text;
+            }
+            get route() {
+              return def.route;
+            }
+            get href() {
+              return def.href;
+            }
+            get prefixType() {
+              return "icon";
+            }
+            get prefixValue() {
+              return def.icon;
+            }
+          };
+
+        // 同学录/班级圈/班级管理：左侧菜单（必须传 panelKey "main"，否则 section 被静默丢弃）
+        api.addSidebarSection(
+          (BaseSection, BaseLink) => {
+            const linkDefs = [
+              { name: "school-directory", text: "同学录", route: "school-directory", icon: "address-book" },
+              { name: "school-classes", text: "班级圈", route: "groups", icon: "user-group" },
+              { name: "school-manage", text: "班级管理", route: "school-manage", icon: "users" },
             ];
-          }
-        };
-      },
-      "main"
-      );
+            if (currentUser?.staff) {
+              linkDefs.push({ name: "school-config", text: "插件配置", route: "school-config", icon: "gear" });
+            }
+            if (currentUser) {
+              linkDefs.push({
+                name: "school-me",
+                text: "我的",
+                href: `/u/${currentUser.username}/preferences/profile`,
+                icon: "user",
+              });
+            } else {
+              linkDefs.push(
+                { name: "school-login", text: "登录", route: "school-login", icon: "sign-in-alt" },
+                { name: "school-register", text: "注册", route: "school-register", icon: "user-plus" }
+              );
+            }
+
+            return class extends BaseSection {
+              get name() {
+                return "school";
+              }
+              get text() {
+                return "校园";
+              }
+              get links() {
+                return linkDefs.map((def) => buildLink(BaseLink, def));
+              }
+            };
+          },
+          "main"
+        );
 
       // 班级管理：admin 管理菜单入口
       api.addAdminSidebarSectionLink("root", {

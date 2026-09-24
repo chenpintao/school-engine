@@ -9,6 +9,7 @@ module Jobs
 
       def execute(args = nil)
         return unless SiteSetting.school_engine_enabled
+        return unless SiteSetting.school_engine_capsule_enabled
 
         window = semester_window(Date.current)
         return unless window

@@ -1,39 +1,56 @@
 # frozen_string_literal: true
 
 module SchoolEngine
-  # 全校表达空间（由原 confess 表白墙分类改造）
+  # 表达层匿名机制（规则来源：CategoryRules，不再硬编码分类 slug）
   #
-  # 与旧"整分类强制匿名"机制的区别：
-  #  - 主题 OP 一律显示昵称；仅回帖（post_number > 1）可由作者选择匿名
-  #  - 匿名回帖在话题内拥有固定字母标签（anon_label = A/B/C…），显示"匿名同学X"
-  #  - 历史匿名帖（anonymous=true 无 anon_label）继续整体掩码为"匿名用户"
+  # 分类模式（后台可配）：
+  #  - optional 可选（原表达空间）：主题 OP 一律显示昵称；仅回帖（post_number > 1）
+  #    可由作者选择匿名；匿名回帖在话题内拥有固定字母标签（anon_label = A/B/C…），
+  #    显示"匿名同学X"
+  #  - forced 强制（原匿名墙）：主题 OP + 回帖全部自动匿名，任何身份、无需勾选
+  #  - disabled/未配置：不允许匿名
+  # 历史匿名帖（anonymous=true 无 anon_label）继续整体掩码为"匿名用户"。
   module Expression
     # advisory lock 一级 key（"SENG" 缩写派生的固定 int，避免与其它插件冲突）
     ADVISORY_LOCK_KEY = 0x53454e47
 
-    # 表达空间分类（按 site setting 的 slug 查找）
+    # ---- optional 可选匿名分类（精选 / 时光胶囊只作用于这类分类）----
+
+    def self.categories
+      CategoryRules.categories_with_mode("optional")
+    end
+
     def self.category
-      slug = SiteSetting.school_engine_expression_category.to_s.strip
-      slug.present? ? Category.find_by(slug: slug) : nil
+      categories.first
     end
 
     def self.category?(category)
-      return false if category.nil?
-      category.slug == SiteSetting.school_engine_expression_category.to_s.strip
+      CategoryRules.optional?(category)
     end
 
-    # Post 是否位于表达空间
+    # Post 是否位于可选匿名分类
     def self.in_expression?(post)
       category?(post&.topic&.category)
     end
 
-    # 用户是否允许在表达空间匿名（非 staff、非教师；毕业生/学生均可）
+    # ---- forced 强制匿名分类 ----
+
+    def self.wall_category?(category)
+      CategoryRules.forced?(category)
+    end
+
+    # Post 是否位于强制匿名分类
+    def self.in_wall?(post)
+      wall_category?(post&.topic&.category)
+    end
+
+    # 可选分类中用户是否允许匿名（非 staff、非教师；毕业生/学生均可）
     def self.user_may_anonymous?(user)
       return false if user.nil? || user.staff?
       !SchoolEngine::Visibility.teacher?(user)
     end
 
-    # 判定一个新建 post 是否应匿名（供 post_created 钩子统一调用）
+    # 可选匿名分类：回帖 + 主动勾选才标记（OP 不可匿名）
     def self.post_wants_anonymous?(post, opts)
       in_expression?(post) &&
         post.post_number > 1 &&
@@ -41,28 +58,12 @@ module SchoolEngine
         user_may_anonymous?(post.user)
     end
 
-    # ---- 匿名墙（整分类强制匿名，机制与表达空间一致，只是无需勾选、OP 也匿名）----
-
-    def self.wall_category
-      slug = SiteSetting.school_engine_wall_category.to_s.strip
-      slug.present? ? Category.find_by(slug: slug) : nil
-    end
-
-    def self.wall_category?(category)
-      return false if category.nil?
-      category.slug == SiteSetting.school_engine_wall_category.to_s.strip
-    end
-
-    # Post 是否位于匿名墙
-    def self.in_wall?(post)
-      wall_category?(post&.topic&.category)
-    end
-
-    # 强制匿名：匿名墙内任何帖子（含 OP、任何身份）都打匿名标记并分配话题内字母标签
+    # 强制匿名分类：任何帖子（含 OP、任何身份）打匿名标记并分配话题内字母标签
     # 返回 true 表示本次新写入了标记
     def self.force_wall_anonymous!(post)
       return false unless in_wall?(post)
       return false if post.custom_fields["anonymous"] == "true"
+
       post.custom_fields["anonymous"] = "true"
       assign_anon_label!(post)
       true

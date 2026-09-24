@@ -5,12 +5,20 @@ import { on } from "@ember/modifier";
 import { i18n } from "discourse-i18n";
 
 /**
- * 匿名身份控件（composer-fields outlet）：
- * - 全校表达空间（回帖、学生）：显示昵称 / 匿名 二选一，写 composer.schoolAnonymous
- * - 匿名墙（发主题或回帖，任何身份）：整分类强制匿名，仅提示，无需也不接受选择；
+ * 匿名身份控件（composer-fields outlet），分类行为全部来自
+ * siteSettings.school_engine_category_rules（/school/config 配置页表单维护）：
+ * - forced 强制：发主题或回帖、任何身份都整分类匿名，仅提示，无需也不接受选择；
  *   服务端 post_created 无条件打匿名标记。
- * OP（createTopic）、staff、教师、其他分类均不显示表达空间选择器。
+ * - optional 可选：仅回帖（reply）、非 staff、非教师可见昵称 / 匿名二选一，
+ *   写 composer.schoolAnonymous。
+ * - disabled/未配置：不显示。
+ * 设置为空时使用与服务端一致的内置默认规则（confess 可选、anonymous-wall 强制）。
  */
+const FALLBACK_RULES = [
+  { slug: "confess", mode: "optional" },
+  { slug: "anonymous-wall", mode: "forced" },
+];
+
 export default class SchoolAnonymousChoice extends Component {
   @service currentUser;
   @service site;
@@ -25,16 +33,29 @@ export default class SchoolAnonymousChoice extends Component {
     return this.site.categories?.findBy?.("id", id)?.slug;
   }
 
+  get rules() {
+    try {
+      const parsed = JSON.parse(this.siteSettings.school_engine_category_rules || "[]");
+      return Array.isArray(parsed) && parsed.length ? parsed : FALLBACK_RULES;
+    } catch {
+      return FALLBACK_RULES;
+    }
+  }
+
+  get mode() {
+    return this.rules.find((rule) => rule.slug === this.categorySlug)?.mode;
+  }
+
   get isWall() {
-    return this.categorySlug === this.siteSettings.school_engine_wall_category;
+    return this.mode === "forced";
   }
 
   get isExpressionReply() {
     return (
+      this.mode === "optional" &&
       this.composer?.action === "reply" &&
       !this.currentUser?.staff &&
-      !this.currentUser?.school_teacher &&
-      this.categorySlug === this.siteSettings.school_engine_expression_category
+      !this.currentUser?.school_teacher
     );
   }
 

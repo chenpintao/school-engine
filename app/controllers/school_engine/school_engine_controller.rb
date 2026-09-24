@@ -6,14 +6,15 @@ module SchoolEngine
     requires_plugin "school-engine"
     wrap_parameters false
 
-    # register_user 与 home 放行匿名（注册接口必须公开；home 供 /latest 首页区块在未登录时展示）
-    requires_login except: %i[register_user home]
-    # login_required=true 时未登录 JSON/XHR 会被全局拦截，这两个接口同样需要放行重定向回调。
+    # register_user/home/feed/moods 放行匿名（注册必须公开；首页卡片与心情历史供未登录浏览）
+    requires_login except: %i[register_user home feed moods]
+    # login_required=true 时未登录 JSON/XHR 会被全局拦截，这些接口同样需要放行重定向回调。
     # 注意：requires_login 自身注册的是 block_if_requires_login，已由上面的 except 排除，不要再 skip 不存在的回调。
-    skip_before_action :redirect_to_login_if_required, only: %i[register_user home]
+    skip_before_action :redirect_to_login_if_required, only: %i[register_user home feed moods]
 
-    # staff 专属操作（含联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
-    before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
+    # staff 专属操作（含联系方式导出、插件配置）走 guardian；管理类 API 允许"班级管理组"细分授权
+    before_action :ensure_staff,
+                  only: %i[directory_export feature_post unfeature_post config update_config]
     before_action :ensure_school_admin, only: %i[admin_users admin_update_user admin_classes admin_fix_displays]
 
     CONTACT_KEYS = %w[phone real_email wechat qq other_social].freeze
@@ -21,6 +22,75 @@ module SchoolEngine
     # GET /school/home.json —— 原生首页（discovery latest）上方区块数据：今日话题 + 精选回帖
     def home
       render json: { daily_topic: daily_topic, featured_posts: featured_posts, fallback: @fallback }
+    end
+
+    # GET /school/feed.json —— 定制首页卡片：精选（按话题分组，每组≤3条精选回帖）+ 最新帖
+    def feed
+      render json: {
+               featured:
+                 SiteSetting.school_engine_feature_enabled ? featured_groups : [],
+               latest: latest_topics,
+               mood_enabled: SiteSetting.school_engine_mood_enabled,
+               today_mood:
+                 if SiteSetting.school_engine_mood_enabled && current_user
+                   SchoolEngine::Mood.today(current_user)
+                 end,
+             }
+    end
+
+    # POST /school/mood-checkin.json —— 今日心情签到/改签（mood: 1-5）
+    def mood_checkin
+      unless SiteSetting.school_engine_mood_enabled
+        return(
+          render json: { errors: [I18n.t("school_engine.mood_disabled")] },
+                 status: :forbidden
+        )
+      end
+      render json: { mood: SchoolEngine::Mood.checkin!(current_user, params[:mood]) }
+    rescue Discourse::InvalidParameters
+      render json: { errors: [I18n.t("school_engine.err_mood_invalid")] }, status: :unprocessable_entity
+    end
+
+    # GET /school/moods/:username.json —— 近 N 天心情历史（默认 126 天≈18 周，供热力图）
+    def moods
+      user = User.find_by_username(params.require(:username))
+      raise Discourse::NotFound unless user
+
+      raw_days = params[:days].to_i
+      days = raw_days.zero? ? 126 : [[raw_days, 7].max, 365].min
+      mood_map =
+        SiteSetting.school_engine_mood_enabled ? SchoolEngine::Mood.recent_map(user, days) : {}
+      render json: { moods: mood_map }
+    end
+
+    # GET /school/config.json —— 配置页数据（staff；分类匿名规则 + 功能开关 + 参数）
+    def config
+      render json: {
+               category_rules: SchoolEngine::CategoryRules.rules,
+               features: config_features,
+               settings: config_settings,
+             }
+    end
+
+    # PUT /school/config.json —— 保存配置（staff；写 SiteSetting）
+    def update_config
+      rules = SchoolEngine::CategoryRules.update!(params[:category_rules] || [])
+
+      config_features.each do |key, _|
+        value = params[:features]&.[](key)
+        SiteSetting.public_send("#{key}=", value == true || value == "true")
+      end
+
+      update_config_setting(:school_engine_featured_per_day, params.dig("settings", "featured_per_day"))
+      update_config_setting(:school_engine_capsule_like_threshold, params.dig("settings", "capsule_like_threshold"))
+      SiteSetting.school_engine_semester_end_1 = params.dig("settings", "semester_end_1").to_s
+      SiteSetting.school_engine_semester_end_2 = params.dig("settings", "semester_end_2").to_s
+
+      render json: {
+               category_rules: rules,
+               features: config_features,
+               settings: config_settings,
+             }
     end
 
     # GET /school/junior-class-status.json
@@ -320,8 +390,9 @@ module SchoolEngine
 
     # ---- 原生首页区块数据（今日话题 + 精选回帖）----
 
-    def expression_category
-      @expression_category ||= SchoolEngine::Expression.category
+    # 全部 optional 可选匿名分类（精选/首页区块可能同时作用于多个分类）
+    def expression_category_ids
+      @expression_category_ids ||= SchoolEngine::Expression.categories.map(&:id)
     end
 
     # 排除学生标记"不给老师看"的主题（首页区块面向包括教师的所有人）
@@ -335,9 +406,9 @@ module SchoolEngine
     end
 
     def expression_topics
-      return Topic.none unless expression_category
+      return Topic.none if expression_category_ids.empty?
       Topic
-        .where(category_id: expression_category.id, deleted_at: nil, archived: false, visible: true)
+        .where(category_id: expression_category_ids, deleted_at: nil, archived: false, visible: true)
         .where("topics.id NOT IN (#{home_hidden_from_staff_sql})")
     end
 
@@ -362,6 +433,8 @@ module SchoolEngine
 
     # 当日精选；当天没有则回退最近一批精选（区块永不空壳）
     def featured_posts
+      return [] unless SiteSetting.school_engine_feature_enabled
+
       limit = [SiteSetting.school_engine_featured_per_day.to_i, 1].max
       now = Time.zone.now
       start_iso = now.beginning_of_day.utc.iso8601
@@ -409,6 +482,107 @@ module SchoolEngine
       CGI.unescapeHTML(text).truncate(length)
     end
 
+    # 精选按话题分组：取最近 9 条精选回帖，同话题归并，每组最多展示 3 条
+    def featured_groups
+      return [] if expression_category_ids.empty?
+
+      posts =
+        Post
+          .joins(:topic)
+          .joins(
+            "JOIN post_custom_fields school_feed_feat ON school_feed_feat.post_id = posts.id AND school_feed_feat.name = 'school_featured'",
+          )
+          .joins(
+            "JOIN post_custom_fields school_feed_at ON school_feed_at.post_id = posts.id AND school_feed_at.name = 'school_featured_at'",
+          )
+          .where(topic_id: expression_topics.select(:id))
+          .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
+          .where("posts.post_number > 1")
+          .order("school_feed_at.value DESC")
+          .limit(9)
+          .to_a
+
+      posts.group_by(&:topic_id).map do |topic_id, list|
+        topic = list.first.topic
+        {
+          topic_id: topic_id,
+          title: topic&.title,
+          url: topic&.relative_url,
+          replies: list.first(3).map { |post| feed_reply(post) },
+        }
+      end
+    end
+
+    def feed_reply(post)
+      {
+        url: post.url,
+        excerpt: home_excerpt(post.cooked, 120),
+        like_count: post.like_count,
+      }
+    end
+
+    # 最新帖（按 bumped_at）；只取当前用户可读分类，精选话题由前端剔除
+    def latest_topics
+      category_ids =
+        if current_user
+          Guardian.new(current_user).allowed_category_ids
+        else
+          Category.where(read_restricted: false).pluck(:id)
+        end
+
+      topics =
+        Topic
+          .where(deleted_at: nil, archived: false, visible: true)
+          .where("category_id IS NULL OR category_id IN (?)", category_ids)
+          .order(bumped_at: :desc)
+          .limit(12)
+          .to_a
+
+      op_likes =
+        Post
+          .where(topic_id: topics.map(&:id), post_number: 1)
+          .pluck(:topic_id, :like_count)
+          .to_h
+
+      topics.map do |topic|
+        {
+          topic_id: topic.id,
+          title: topic.title,
+          url: topic.relative_url,
+          like_count: op_likes[topic.id] || 0,
+          posts_count: topic.posts_count,
+        }
+      end
+    end
+
+    # ---- 配置页：功能开关 / 参数序列化 ----
+
+    CONFIG_FEATURE_KEYS = %i[
+      school_engine_feature_enabled
+      school_engine_capsule_enabled
+      school_engine_mood_enabled
+      school_engine_tags_enabled
+    ].freeze
+
+    def config_features
+      CONFIG_FEATURE_KEYS.map { |key| [key, SiteSetting.public_send(key)] }.to_h
+    end
+
+    def config_settings
+      {
+        featured_per_day: SiteSetting.school_engine_featured_per_day,
+        capsule_like_threshold: SiteSetting.school_engine_capsule_like_threshold,
+        semester_end_1: SiteSetting.school_engine_semester_end_1,
+        semester_end_2: SiteSetting.school_engine_semester_end_2,
+      }
+    end
+
+    # 整数设置写入：非正数视为非法，保留原值
+    def update_config_setting(key, value)
+      integer = value.to_i
+      SiteSetting.public_send("#{key}=", integer) if integer.positive?
+    end
+
     # "不给老师看"主题 id 子查询（供 timeline 教师视角过滤）
     def timeline_hidden_sql
       <<~SQL.squish
@@ -437,6 +611,12 @@ module SchoolEngine
 
     # POST /school/feature-post.json —— staff 精选表达空间回帖（每日上限 + 系统私信 + 入时光胶囊）
     def feature_post
+      unless SiteSetting.school_engine_feature_enabled
+        return(
+          render json: { errors: [I18n.t("school_engine.feature_disabled")] }, status: :forbidden
+        )
+      end
+
       post = Post.find(params[:post_id].to_i)
       if SchoolEngine::Featured.feature!(post)
         SchoolEngine::Messages.featured_post_notification!(post)

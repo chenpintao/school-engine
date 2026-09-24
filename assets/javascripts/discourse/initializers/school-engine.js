@@ -1,5 +1,6 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { ajax } from "discourse/lib/ajax";
+import { i18n } from "discourse-i18n";
 import SchoolJuniorClassModal from "discourse/plugins/school-engine/discourse/components/school-junior-class-modal";
 import SchoolFeatureButton from "discourse/plugins/school-engine/discourse/components/school-feature-button";
 
@@ -80,6 +81,30 @@ export default {
                   return "users";
                 }
               })(),
+              ...(currentUser?.staff
+                ? [
+                    new (class extends BaseCustomSidebarSectionLink {
+                      get name() {
+                        return "school-config";
+                      }
+                      get route() {
+                        return "school-config";
+                      }
+                      get title() {
+                        return "插件配置";
+                      }
+                      get text() {
+                        return "插件配置";
+                      }
+                      get prefixType() {
+                        return "icon";
+                      }
+                      get prefixValue() {
+                        return "gear";
+                      }
+                    })(),
+                  ]
+                : []),
               ...(currentUser
                 ? [
                     new (class extends BaseCustomSidebarSectionLink {
@@ -176,6 +201,97 @@ export default {
           after: context.firstButtonKey,
         });
       });
+
+      // ---- 编辑器简洁 / 高级模式 ----
+      // 纯展示层方案：body 加 school-composer-mode--simple / --advanced 类，
+      // 简洁模式由 SCSS 隐藏 Markdown/富文本按钮（display:none 可逆，不改编辑器任何逻辑），
+      // 只保留 .upload 上传/拍照按钮；切换滑块注入到工具栏内，视觉对齐核心自带滑块。
+      const COMPOSER_MODE_KEY = "schoolComposerMode";
+
+      const composerMode = () =>
+        localStorage.getItem(COMPOSER_MODE_KEY) === "advanced" ? "advanced" : "simple";
+
+      const syncComposerSwitch = (button, mode) => {
+        const advanced = mode === "advanced";
+        button.classList.toggle("is-advanced", advanced);
+        button.setAttribute("aria-checked", advanced ? "true" : "false");
+        const label = i18n(
+          advanced
+            ? "school_engine.composer_mode_to_simple"
+            : "school_engine.composer_mode_to_advanced"
+        );
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button
+          .querySelector(".school-composer-mode-switch__icon--simple")
+          ?.classList.toggle("--active", !advanced);
+        button
+          .querySelector(".school-composer-mode-switch__icon--advanced")
+          ?.classList.toggle("--active", advanced);
+      };
+
+      const applyComposerMode = (mode) => {
+        document.body.classList.toggle("school-composer-mode--simple", mode === "simple");
+        document.body.classList.toggle("school-composer-mode--advanced", mode === "advanced");
+        document
+          .querySelectorAll(".school-composer-mode-switch")
+          .forEach((button) => syncComposerSwitch(button, mode));
+      };
+
+      // 把滑块挂到工具栏内（与按钮同一父容器）；工具栏重渲染时幂等重挂
+      const mountComposerSwitch = (bar) => {
+        if (!bar || bar.querySelector(".school-composer-mode-switch")) {
+          return;
+        }
+        const anchor = bar.querySelector(
+          ".toolbar__button, .toolbar-separator, .composer-toggle-switch"
+        );
+        const container = anchor ? anchor.parentElement : bar;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "school-composer-mode-switch";
+        button.setAttribute("role", "switch");
+        button.innerHTML = `
+          <span class="school-composer-mode-switch__slider">
+            <span class="school-composer-mode-switch__icon school-composer-mode-switch__icon--simple" aria-hidden="true">
+              <svg class="fa d-icon svg-icon svg-string"><use href="#pencil"></use></svg>
+            </span>
+            <span class="school-composer-mode-switch__thumb"></span>
+            <span class="school-composer-mode-switch__icon school-composer-mode-switch__icon--advanced" aria-hidden="true">
+              <svg class="fa d-icon svg-icon svg-string"><use href="#fab-markdown"></use></svg>
+            </span>
+          </span>`;
+        button.addEventListener("click", () => {
+          const next = composerMode() === "simple" ? "advanced" : "simple";
+          localStorage.setItem(COMPOSER_MODE_KEY, next);
+          applyComposerMode(next);
+        });
+
+        container.appendChild(button);
+        syncComposerSwitch(button, composerMode());
+      };
+
+      // 编辑器首次打开或核心重渲染工具栏时自动挂载
+      const composerObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+              return;
+            }
+            if (node.classList?.contains("d-editor-button-bar")) {
+              mountComposerSwitch(node);
+            }
+            node
+              .querySelectorAll?.(".d-editor-button-bar")
+              .forEach(mountComposerSwitch);
+          });
+        });
+      });
+      composerObserver.observe(document.body, { childList: true, subtree: true });
+
+      document.querySelectorAll(".d-editor-button-bar").forEach(mountComposerSwitch);
+      applyComposerMode(composerMode());
 
       const checked = "__school_junior_checked__";
 

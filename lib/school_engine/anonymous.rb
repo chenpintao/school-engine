@@ -12,11 +12,9 @@ module SchoolEngine
 
     # ===== 查询辅助 =====
 
-    # 该分类是否允许匿名（SiteSetting.school_engine_anonymous_categories 逗号分隔的 slug）
+    # 该分类是否允许匿名（规则由 /school/config 配置页维护：强制/可选均允许）
     def self.category_allows_anonymous?(category)
-      return false if category.nil?
-      slugs = SiteSetting.school_engine_anonymous_categories.to_s.split(",").map(&:strip).reject(&:empty?)
-      slugs.include?(category.slug)
+      CategoryRules.allows_anonymous?(category)
     end
 
     # 帖子是否应匿名（分类在 Topic 上，Post 没有 category 方法）

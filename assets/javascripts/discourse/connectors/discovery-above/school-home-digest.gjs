@@ -1,123 +1,207 @@
 import Component from "@glimmer/component";
 import { tracked } from "@glimmer/tracking";
+import { action } from "@ember/object";
 import { service } from "@ember/service";
+import { on } from "@ember/modifier";
+import { fn } from "@ember/helper";
 import { didInsert } from "@ember/render-modifiers/modifiers/did-insert";
 import { ajax } from "discourse/lib/ajax";
+import { popupAjaxError } from "discourse/lib/ajax-error";
 import dIcon from "discourse/helpers/d-icon";
+import DButton from "discourse/ui-kit/d-button";
 import { i18n } from "discourse-i18n";
 
 /**
- * 原生首页（discovery /latest）顶部的「今日话题 + 精选回答」区块。
- * 不接管 "/"、不自绘页面框架——侧边栏、顶部导航、话题列表全部沿用 Discourse 原生，
- * 本组件只通过 discovery-above outlet（每个 discovery 页面只渲染一次，不会随
- * 无限滚动/翻页重复挂载）注入到列表上方；数据来自 GET /school/home.json。
- * 另加模块级单实例保护：任何情况下同屏只允许一个区块渲染，防止 outlet 行为变化导致堆叠。
- * 仅用核心已验证模块（ajax / i18n / render-modifiers），样式只引用 DC CSS 变量。
+ * 定制首页（不接管路由、不自绘框架）：组件通过 discovery-above outlet 注入到
+ * Discourse 原生 /latest 页面，原生顶栏/侧边栏/移动端框架全部保留；原生话题列表
+ * 由 SCSS 在本组件 data-live="true" 时隐藏（body:has(...)，离开 latest 自动恢复）。
+ * 结构：欢迎语 + 每日心情签到（5 表情，可改签）/ 精选横条（话题标题 + ≤3 条精选回帖，
+ * 右侧点赞数）/ 最新横条（剔除精选话题）。数据 GET /school/feed.json。
+ * 所有导入均为插件中已验证模块，样式只用 DC CSS 变量，随主题（含深色）变化。
  */
-let liveDigestCount = 0;
+const MOODS = [
+  { value: 1, emoji: "😞" },
+  { value: 2, emoji: "😕" },
+  { value: 3, emoji: "😐" },
+  { value: 4, emoji: "🙂" },
+  { value: 5, emoji: "😄" },
+];
 
-export default class SchoolHomeDigest extends Component {
+export default class SchoolHomeFeed extends Component {
   @service router;
-  isCounted = false;
-  @tracked isLive = false;
-  @tracked dailyTopic = null;
-  @tracked featuredPosts = [];
-  @tracked fallback = false;
+  @service currentUser;
+
   @tracked loaded = false;
+  @tracked featured = [];
+  @tracked latest = [];
+  @tracked todayMood = null;
+  @tracked moodEnabled = true;
+  @tracked editing = false;
 
   get onLatest() {
     return this.router.currentRouteName === "discovery.latest";
   }
 
-  get showBlock() {
-    return (
-      this.isLive &&
-      this.onLatest &&
-      this.loaded &&
-      (this.dailyTopic || this.featuredPosts.length > 0)
+  get isLive() {
+    return this.onLatest && this.loaded;
+  }
+
+  get greeting() {
+    return this.currentUser
+      ? i18n("school_engine.welcome_back", {
+          name: this.currentUser.display_name || this.currentUser.username,
+        })
+      : i18n("school_engine.welcome_guest");
+  }
+
+  moods = MOODS;
+
+  get currentMood() {
+    return MOODS.find((m) => m.value === this.todayMood);
+  }
+
+  get currentMoodName() {
+    return this.todayMood
+      ? i18n(`school_engine.mood_name_${this.todayMood}`)
+      : "";
+  }
+
+  get showPicker() {
+    return !this.todayMood || this.editing;
+  }
+
+  moodLabel = (value) => i18n(`school_engine.mood_name_${value}`);
+
+  get featuredTopicIds() {
+    return new Set(this.featured.map((card) => card.topic_id));
+  }
+
+  get latestFiltered() {
+    return this.latest.filter(
+      (card) => !this.featuredTopicIds.has(card.topic_id),
     );
   }
 
   load() {
-    // 只放行第一个挂载的实例；重复 outlet 实例静默不渲染，避免首页区块堆叠
-    liveDigestCount += 1;
-    this.isCounted = true;
-    if (liveDigestCount !== 1 || !this.onLatest) {
+    if (!this.onLatest) {
+      this.loaded = true;
       return;
     }
-    this.isLive = true;
-    ajax("/school/home.json")
+    ajax("/school/feed.json")
       .then((data) => {
-        this.dailyTopic = data.daily_topic;
-        this.featuredPosts = data.featured_posts || [];
-        this.fallback = data.fallback === true;
+        this.featured = data.featured || [];
+        this.latest = data.latest || [];
+        this.todayMood = data.today_mood;
+        this.moodEnabled = data.mood_enabled !== false;
         this.loaded = true;
       })
-      .catch(() => {
-        // 首页区块失败不影响原生 latest 列表
+      .catch(popupAjaxError)
+      .finally(() => {
         this.loaded = true;
       });
   }
 
-  willDestroy() {
-    super.willDestroy(...arguments);
-    if (this.isCounted) {
-      liveDigestCount = Math.max(0, liveDigestCount - 1);
-    }
+  @action
+  selectMood(mood) {
+    ajax("/school/mood-checkin.json", { type: "POST", data: { mood } })
+      .then((data) => {
+        this.todayMood = data.mood;
+        this.editing = false;
+      })
+      .catch(popupAjaxError);
+  }
+
+  @action
+  startEdit() {
+    this.editing = true;
   }
 
   <template>
-    <div {{didInsert this.load}}>
-      {{#if this.showBlock}}
-        <div class="school-home-digest">
-          {{#if this.dailyTopic}}
-            <section class="school-digest-section school-digest-topic">
-              <h2 class="school-digest-heading">
-                {{i18n "school_engine.home_daily_title"}}
-              </h2>
-              <h3 class="school-digest-topic-title">
-                <a href={{this.dailyTopic.url}}>{{this.dailyTopic.title}}</a>
-              </h3>
-              {{#if this.dailyTopic.excerpt}}
-                <p class="school-digest-topic-excerpt">{{this.dailyTopic.excerpt}}</p>
-              {{/if}}
-              <a class="school-digest-topic-join" href={{this.dailyTopic.url}}>
-                {{i18n "school_engine.home_daily_join"}}
-                {{dIcon "chevron-right"}}
-              </a>
-            </section>
-          {{/if}}
+    <div
+      class="school-home"
+      data-live={{if this.isLive "true" "false"}}
+      {{didInsert this.load}}
+    >
+      <header class="school-home-header">
+        <h1 class="school-home-greeting">{{this.greeting}}</h1>
+        {{#if (and this.currentUser this.moodEnabled)}}
+          <div class="school-mood-checkin">
+            {{#if this.showPicker}}
+              <span class="school-mood-checkin-label">
+                {{i18n "school_engine.mood_today"}}
+              </span>
+              <div class="school-mood-picker" role="group">
+                {{#each this.moods as |mood|}}
+                  <button
+                    type="button"
+                    class="school-mood-btn"
+                    title={{fn this.moodLabel mood.value}}
+                    aria-label={{fn this.moodLabel mood.value}}
+                    {{on "click" (fn this.selectMood mood.value)}}
+                  >
+                    {{mood.emoji}}
+                  </button>
+                {{/each}}
+              </div>
+            {{else}}
+              <span
+                class="school-mood-current"
+                title={{this.currentMoodName}}
+              >
+                {{this.currentMood.emoji}}
+              </span>
+              <DButton
+                @action={{this.startEdit}}
+                @icon="pencil-alt"
+                @label="school_engine.mood_change"
+                class="btn-small school-mood-change-btn"
+              />
+            {{/if}}
+          </div>
+        {{/if}}
+      </header>
 
-          {{#if this.featuredPosts.length}}
-            <section class="school-digest-section school-digest-featured">
-              <h2 class="school-digest-heading">
-                {{i18n "school_engine.home_featured_title"}}
-              </h2>
-              {{#if this.fallback}}
-                <p class="school-digest-fallback">{{i18n "school_engine.home_featured_fallback"}}</p>
-              {{/if}}
-              <ul class="school-digest-list">
-                {{#each this.featuredPosts as |post|}}
-                  <li class="school-digest-item">
-                    <div class="school-digest-item-meta">
-                      <span class="school-digest-item-author">
-                        {{dIcon (if post.anonymous "far-eye-slash" "user")}}
-                        {{post.author_name}}
-                      </span>
-                      {{#if post.like_count}}
-                        <span class="school-digest-item-likes">
-                          {{dIcon "d-liked"}}
-                          {{post.like_count}}
-                        </span>
-                      {{/if}}
-                    </div>
-                    <a class="school-digest-item-excerpt" href={{post.url}}>{{post.excerpt}}</a>
+      {{#if this.featured.length}}
+        <section class="school-feed-section">
+          <h2 class="school-feed-heading">
+            {{i18n "school_engine.feed_featured_title"}}
+          </h2>
+          {{#each this.featured as |card|}}
+            <article class="school-feed-card">
+              <a class="school-feed-title" href={{card.url}}>{{card.title}}</a>
+              <ul class="school-feed-replies">
+                {{#each card.replies as |reply|}}
+                  <li class="school-feed-reply">
+                    <a class="school-feed-excerpt" href={{reply.url}}>
+                      {{reply.excerpt}}
+                    </a>
+                    <span class="school-feed-likes">
+                      {{dIcon "d-liked"}}
+                      {{reply.like_count}}
+                    </span>
                   </li>
                 {{/each}}
               </ul>
-            </section>
-          {{/if}}
-        </div>
+            </article>
+          {{/each}}
+        </section>
+      {{/if}}
+
+      {{#if this.latestFiltered.length}}
+        <section class="school-feed-section">
+          <h2 class="school-feed-heading">
+            {{i18n "school_engine.feed_latest_title"}}
+          </h2>
+          {{#each this.latestFiltered as |card|}}
+            <article class="school-feed-card school-feed-card-plain">
+              <a class="school-feed-title" href={{card.url}}>{{card.title}}</a>
+              <span class="school-feed-likes">
+                {{dIcon "d-liked"}}
+                {{card.like_count}}
+              </span>
+            </article>
+          {{/each}}
+        </section>
       {{/if}}
     </div>
   </template>

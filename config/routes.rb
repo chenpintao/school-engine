@@ -14,9 +14,16 @@ SchoolEngine::Engine.routes.draw do
   get "/school/login" => "school_engine_pages#login"
   # 管理页（班级管理组入口；/admin/school-classes 为 staff 后台入口，两者渲染同一 SPA）
   get "/school/manage" => "school_engine_pages#manage", constraints: { format: /html/ }
+  get "/school/config" => "school_engine_pages#config",
+      constraints: ->(req) { req.format.html? }
 
   # ---- 业务 API ----
   get "/school/home" => "school_engine#home"
+  get "/school/feed" => "school_engine#feed"
+  get "/school/config" => "school_engine#config"
+  put "/school/config" => "school_engine#update_config"
+  get "/school/moods/:username" => "school_engine#moods"
+  post "/school/mood-checkin" => "school_engine#mood_checkin"
   get "/school/junior-class-status" => "school_engine#junior_class_status"
   post "/school/select-junior-class" => "school_engine#select_junior_class"
 

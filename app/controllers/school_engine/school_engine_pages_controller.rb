@@ -43,6 +43,13 @@ module SchoolEngine
       render "school_engine_pages/spa", layout: "application"
     end
 
+    # GET /school/config（插件配置页 shell；staff 才能访问，数据 API 另有 guardian 校验）
+    def config
+      raise Discourse::InvalidAccess.new unless current_user&.staff?
+
+      render "school_engine_pages/spa", layout: "application"
+    end
+
     private
 
     def redirect_if_logged_in

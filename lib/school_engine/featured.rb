@@ -45,7 +45,10 @@ module SchoolEngine
       now_iso = Time.zone.now.utc.iso8601
       post.custom_fields[CF_FEATURED] = "true"
       post.custom_fields[CF_FEATURED_AT] = now_iso
-      post.custom_fields[CF_CAPSULE] = "true" if post.custom_fields[CF_CAPSULE] != "true"
+      if SiteSetting.school_engine_capsule_enabled &&
+         post.custom_fields[CF_CAPSULE] != "true"
+        post.custom_fields[CF_CAPSULE] = "true"
+      end
       post.save_custom_fields(true)
       true
     end
@@ -59,8 +62,9 @@ module SchoolEngine
       true
     end
 
-    # 点赞达阈值自动入时光胶囊（仅非匿名帖；幂等）
+    # 点赞达阈值自动入时光胶囊（仅非匿名帖；幂等；胶囊功能关闭时不处理）
     def self.auto_capsule_by_likes!(post)
+      return false unless SiteSetting.school_engine_capsule_enabled
       return false if post.nil?
       return false if post.custom_fields["anonymous"] == "true"
       return false if post.custom_fields[CF_CAPSULE] == "true"

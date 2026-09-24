@@ -36,6 +36,7 @@ after_initialize do
   require_relative "lib/school_engine/grade"
   require_relative "lib/school_engine/pinyin"
   require_relative "lib/school_engine/class_circle"
+  require_relative "lib/school_engine/category_rules"
   require_relative "lib/school_engine/anonymous"
   require_relative "lib/school_engine/expression"
   require_relative "lib/school_engine/tags"
@@ -44,13 +45,14 @@ after_initialize do
   require_relative "lib/school_engine/group_visibility"
   require_relative "lib/school_engine/class_notice"
   require_relative "lib/school_engine/visibility"
+  require_relative "lib/school_engine/mood"
 
   # ---- 用户自定义字段注册（必须在 after_initialize 内）----
   # 学籍字段（字符串型）
   %w[
     identity graduation_year enrollment_year class_name real_name status junior_class
     contact_phone contact_real_email contact_wechat contact_qq contact_other_social
-    gender hobbies teacher_id_last4 real_name_initials
+    gender hobbies teacher_id_last4 real_name_initials mood_checkins
   ].each do |f|
     register_user_custom_field_type(f, :string)
   end

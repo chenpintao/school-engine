@@ -8,24 +8,40 @@ import { popupAjaxError } from "discourse/lib/ajax-error";
 import { i18n } from "discourse-i18n";
 
 /**
- * staff 精选/取消精选表达空间回帖（post menu 按钮，新版 glimmer post menu DAG）。
- * 可见条件：staff + 表达空间分类 + 回帖（post_number > 1）。
+ * staff 精选/取消精选回帖（post menu 按钮，新版 glimmer post menu DAG）。
+ * 可见条件：精选功能开启 + staff + optional 可选匿名分类 + 回帖（post_number > 1）。
  * 精选状态来自 PostSerializer 的 school_featured 字段。
  */
+const FALLBACK_RULES = [
+  { slug: "confess", mode: "optional" },
+  { slug: "anonymous-wall", mode: "forced" },
+];
+
 export default class SchoolFeatureButton extends Component {
   @service currentUser;
   @service site;
   @service siteSettings;
   @tracked saving = false;
 
+  get rules() {
+    try {
+      const parsed = JSON.parse(this.siteSettings.school_engine_category_rules || "[]");
+      return Array.isArray(parsed) && parsed.length ? parsed : FALLBACK_RULES;
+    } catch {
+      return FALLBACK_RULES;
+    }
+  }
+
   get visible() {
     const post = this.args.post;
+    if (!this.siteSettings.school_engine_feature_enabled) return false;
     if (!this.currentUser?.staff || !post || post.post_number <= 1) {
       return false;
     }
-    const slug = this.siteSettings.school_engine_expression_category;
     const categoryId = post.topic?.category_id;
-    return categoryId && this.site.categories?.findBy?.("slug", slug)?.id === categoryId;
+    const category = this.site.categories?.findBy?.("id", categoryId);
+    return !!category &&
+      this.rules.some((rule) => rule.slug === category.slug && rule.mode === "optional");
   }
 
   get featured() {

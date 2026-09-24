@@ -29,7 +29,8 @@ SchoolEngine::Engine.routes.draw do
 
   post "/school/register" => "school_engine#register_user"
   post "/school/complete" => "school_engine#complete_registration"
-  get "/school/profile" => "school_engine#profile"
+  get "/school/profile" => "school_engine#profile",
+      constraints: ->(req) { req.format.json? }
   put "/school/profile" => "school_engine#update_profile"
   post "/school/change-password" => "school_engine#change_password"
   post "/school/leave-school" => "school_engine#leave_school"
@@ -41,7 +42,8 @@ SchoolEngine::Engine.routes.draw do
   get "/school/admin-classes" => "school_engine#admin_classes"
   post "/school/admin-fix-displays" => "school_engine#admin_fix_displays"
 
-  get "/school/directory" => "school_engine#directory"
+  get "/school/directory" => "school_engine#directory",
+      constraints: ->(req) { req.format.json? }
   get "/school/directory.csv" => "school_engine#directory_export"
   get "/school/timeline/:username" => "school_engine#timeline"
   post "/school/feature-post" => "school_engine#feature_post"

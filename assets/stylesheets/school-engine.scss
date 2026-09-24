@@ -847,12 +847,17 @@ body.school-circle-group {
 // ---- 定制首页（原生 discovery latest 内注入）----
 // data-live="true"（即当前为 /latest 且区块已加载）时隐藏原生话题列表与底部加载条，
 // 离开 latest（data-live 变 false）原生列表自动恢复，不影响 /top、/categories 等页面。
+//
+// 关键：核心无限滚动由 IntersectionObserver 观察 .load-more-sentinel 触发——
+// 只隐藏 .topic-list 而哨兵仍在视口 → 每拉一页立即再触发 → 无限加载。
+// 哨兵必须一起 display:none（display:none 的元素永不 intersect）。
 
 body:has(.school-home[data-live="true"]) {
   .topic-list,
   #topic-list-bottom,
   .topic-list-bottom,
-  .load-more-container {
+  .load-more-container,
+  .load-more-sentinel {
     display: none;
   }
 }

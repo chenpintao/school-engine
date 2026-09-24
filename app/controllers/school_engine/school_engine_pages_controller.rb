@@ -44,7 +44,9 @@ module SchoolEngine
     end
 
     # GET /school/config（插件配置页 shell；staff 才能访问，数据 API 另有 guardian 校验）
-    def config
+    # 注意：动作名不可用 `config`——ActionView 渲染时会内部调用 controller.config，
+    # 撞名会导致本控制器所有页面渲染抛 InvalidAccess（见 2026-09-24 问题清单 P12）。
+    def config_page
       raise Discourse::InvalidAccess.new unless current_user&.staff?
 
       render "school_engine_pages/spa", layout: "application"

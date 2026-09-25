@@ -12,15 +12,15 @@ import { i18n } from "discourse-i18n";
  * - optional 可选：仅回帖（reply）、非 staff、非教师可见昵称 / 匿名二选一，
  *   写 composer.schoolAnonymous。
  * - disabled/未配置：不显示。
- * 设置为空时使用与服务端一致的内置默认规则（confess 可选、anonymous-wall 强制）。
+ * 规则完全来自站点设置（默认值在 settings.yml 中预设，后台可清空）；为空时不显示控件。
  */
-const FALLBACK_RULES = [
-  { slug: "confess", mode: "optional" },
-  { slug: "anonymous-wall", mode: "forced" },
-];
+
+// 班级圈板块（xx-class-2029-1 / cz-class-2029-3 等）默认且强制不匿名
+const CLASS_CIRCLE_SLUG_REGEX = /^(?:xx|cz)-class-\d{4}-/;
 
 const parseRuleLines = (lines) =>
-  (Array.isArray(lines) ? lines : String(lines || "").split("\n"))
+  // Discourse list 设置以 "|" 分隔存储；同时兼容换行（textarea 粘贴）
+  (Array.isArray(lines) ? lines : String(lines || "").split(/[|\n]/))
     .map((line) => {
       const [slug, mode] = line.split(":");
       return { slug: slug?.trim(), mode: mode?.trim() };
@@ -42,11 +42,14 @@ export default class SchoolAnonymousChoice extends Component {
   }
 
   get rules() {
-    const parsed = parseRuleLines(this.siteSettings.school_engine_category_rules);
-    return parsed.length ? parsed : FALLBACK_RULES;
+    // 规则完全来自站点设置；为空（清空设置）时不显示任何匿名控件
+    return parseRuleLines(this.siteSettings.school_engine_category_rules);
   }
 
   get mode() {
+    if (CLASS_CIRCLE_SLUG_REGEX.test(this.categorySlug || "")) {
+      return "disabled";
+    }
     return this.rules.find((rule) => rule.slug === this.categorySlug)?.mode;
   }
 

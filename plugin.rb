@@ -88,8 +88,15 @@ after_initialize do
     elsif current == "hot"
       SiteSetting.top_menu = "latest|new|unread|top"
     end
-    # 欢迎横幅：启用且仅首页显示（心情签到挂在横幅出口内，有横幅处即有签到）
-    SiteSetting.enable_welcome_banner = true unless SiteSetting.enable_welcome_banner
+    # 欢迎横幅：心情签到挂在横幅出口内，要求横幅启用且仅首页显示。
+    # DC 2026.9+：enable_welcome_banner 变为主题级设置（themeable）且默认已开启，
+    # 不能再走全局赋值（会抛 InvalidSettingAccess）；旧内核中它是普通全局设置。
+    banner_themeable =
+      SiteSetting.respond_to?(:themeable) && SiteSetting.themeable[:enable_welcome_banner]
+    if !banner_themeable && !SiteSetting.enable_welcome_banner
+      SiteSetting.enable_welcome_banner = true
+    end
+    # welcome_banner_page_visibility 仍是普通全局设置：默认 top_menu_pages → 收紧为 homepage
     if SiteSetting.welcome_banner_page_visibility.blank? ||
        SiteSetting.welcome_banner_page_visibility == "top_menu_pages"
       SiteSetting.welcome_banner_page_visibility = "homepage"
@@ -99,13 +106,23 @@ after_initialize do
   end
 
   # ---- 事件钩子 ----
-  # 班级圈功能已下线：不再自动建圈/同步（保留 ClassCircle 代码以便将来恢复）
+  # 注册 / 资料更新 / 管理员调整学籍 → 幂等同步班级圈群组与板块（含教师入教师组）
   on(:user_created) do |user|
-    # no-op（班级圈已下线）
+    next unless SiteSetting.school_engine_enabled
+    begin
+      SchoolEngine::ClassCircle.on_user_created(user)
+    rescue => e
+      Rails.logger.warn("school-engine: 新用户班级圈同步失败 user=#{user&.id}: #{e.message}")
+    end
   end
 
   on(:user_updated) do |user|
-    # no-op（班级圈已下线）
+    next unless SiteSetting.school_engine_enabled
+    begin
+      SchoolEngine::ClassCircle.on_user_updated(user)
+    rescue => e
+      Rails.logger.warn("school-engine: 用户班级圈同步失败 user=#{user&.id}: #{e.message}")
+    end
   end
 
   # 表白墙分类的帖子/回帖自动标记匿名（真实 user_id 保留，管理员可溯源）

@@ -9,12 +9,13 @@ school_engine:
   # 细分管理授权：该组成员可使用校园管理 API（与 staff 等效，不需要 admin 后台权限）
   school_engine_class_admin_group:
     default: ""
-  # 分类匿名规则（原生设置列表，每行一条：分类slug:模式）
-  # 模式：forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名）/ disabled 禁止
-  # 例：confess:optional
-  # 留空使用内置默认（confess:optional、anonymous-wall:forced）
+  # 分类匿名规则（每行一条：分类slug:模式）。插件不创建任何板块，
+  # 由管理员自建板块后在此绑定；清空即全部关闭（班级圈板块恒不匿名）。
+  # 模式：forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名，精选/胶囊作用于此）/ disabled 禁止
+  # 下面只是与默认板块模板对应的预设值，板块不存在时无任何效果，可任意修改或删除：
+  #   confess:optional、anonymous-wall:forced
   school_engine_category_rules:
-    default: ""
+    default: "confess:optional|anonymous-wall:forced"
     type: list
     list_type: simple
     client: true

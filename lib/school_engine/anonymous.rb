@@ -69,7 +69,15 @@ module SchoolEngine
     # 返回新的 cooked HTML；无需替换时返回 nil
     def self.mask_quote_headers(post)
       return nil if post.cooked.blank?
-      targets = post.quoted_posts.index_by(&:id)
+      # DC 2026.8+：Post#quoted_posts 实例方法已移除，引用关系落在 quoted_posts 表
+      # （post_id 为引用方，quoted_post_id 为被引帖）
+      targets =
+        ::QuotedPost
+          .where(post_id: post.id)
+          .includes(:quoted_post)
+          .map(&:quoted_post)
+          .compact
+          .index_by { |p| [p.topic_id, p.post_number] }
       return nil if targets.empty?
 
       guardian = ::Guardian.new(post.user)
@@ -77,7 +85,8 @@ module SchoolEngine
       changed = false
 
       doc.css("aside.quote").each do |aside|
-        target = targets[aside["data-post"].to_i]
+        # 引用头属性是 data-topic + data-post（楼层号），不是帖子全局 id
+        target = targets[[aside["data-topic"].to_i, aside["data-post"].to_i]]
         next unless target
         next unless mask?(target, guardian)
 

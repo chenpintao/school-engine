@@ -4,7 +4,7 @@ en:
     school_engine_teacher_group: "Teacher group name (read-only access in class circles)"
     school_engine_graduate_group: "Graduate group name (read-only access to historical class circles)"
     school_engine_class_admin_group: "Class admin group name; members can use the school management APIs (empty = staff only)"
-    school_engine_category_rules: "Category anonymity rules, one 'slug:mode' per line; mode: forced / optional / disabled (e.g. confess:optional; empty = built-in defaults)"
+    school_engine_category_rules: "Category anonymity rules, one 'slug:mode' per line; categories are never auto-created — bind your own category slugs here. Mode: forced / optional (also enables featured/capsule) / disabled. Empty disables anonymity everywhere; class-circle categories are always non-anonymous"
     school_engine_feature_enabled: "Enable daily featured posts"
     school_engine_capsule_enabled: "Enable the time capsule (auto-archive from featured/likes and semester reports)"
     school_engine_mood_enabled: "Enable daily mood check-ins and heatmap"

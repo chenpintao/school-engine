@@ -7,13 +7,14 @@ module SchoolEngine
 
     def self.on_user_created(user)
       if user.custom_fields["status"].blank?
-        user.custom_fields["status"] = "在读"
+        user.custom_fields["status"] =
+          user.custom_fields["identity"] == "teacher" ? "教师" : "在读"
         user.save_custom_fields(true)
       end
       sync_for(user)
-      # 欢迎通知（需求 §3.1：自动加入班级圈通知）
+      # 欢迎通知（需求 §3.1：自动加入班级圈通知；教师无班级圈，不发空通知）
       display = Grade.display_class(user)
-      notify(user, "欢迎加入！你已自动加入 #{display}")
+      notify(user, "欢迎加入！你已自动加入 #{display}") if display.present?
     end
 
     def self.on_user_updated(user)
@@ -21,11 +22,28 @@ module SchoolEngine
     end
 
     # 幂等同步：确保用户已加入其当前班级圈（Group + Category 存在）
-    # 直接读 DB 里的 custom_fields，避免内存缓存未刷新问题
+    # 直接读 DB 里的 custom_fields，避免内存缓存未刷新问题。
+    # 返回结果哈希（joined/grad_joined/teacher_joined 供一键重算统计）：
+    #   { skipped: true }                                      # 无需同步
+    #   { teacher_joined: true }                               # 教师入教师组
+    #   { joined:, grad_joined:, group:, category: }           # 学生班级圈
     def self.sync_for(user, now: Date.current)
       fields = UserCustomField.where(user_id: user.id).pluck(:name, :value).to_h
+
+      # 教师 → 自动进教师组（教师不进学生班级圈）
+      if fields["identity"] == "teacher" || fields["status"] == "教师"
+        t = teacher_group
+        if t && !GroupUser.exists?(group_id: t.id, user_id: user.id)
+          GroupUser.find_or_create_by!(group: t, user: user)
+          return { teacher_joined: true }
+        end
+        return { skipped: true }
+      end
+
       gy = fields["graduation_year"].to_i
-      return if gy <= 0
+      return { skipped: true } if gy <= 0
+      # staff 已有全部班级圈 full 权限，无需入学生群组（避免为测试账号建空圈）
+      return { skipped: true } if user.staff?
 
       d = gy - Grade.effective_year(now: now)
       cls =
@@ -34,7 +52,7 @@ module SchoolEngine
         else
           fields["class_name"].to_s
         end
-      return if cls.blank?
+      return { skipped: true } if cls.blank?
 
       prefix = current_prefix(fields, d)
       group =
@@ -45,12 +63,45 @@ module SchoolEngine
         visibility_level: Group.visibility_levels[:members],
         members_visibility_level: Group.visibility_levels[:members],
       ) if group.visibility_level != Group.visibility_levels[:members]
+
+      joined = !GroupUser.exists?(group_id: group.id, user_id: user.id)
       GroupUser.find_or_create_by!(group: group, user: user) if group
+
       category =
         Category.find_by(slug: Grade.circle_key(prefix, gy, cls)) ||
         create_category(prefix, gy, cls, group, now: now)
+      # 板块权限自愈：入群即拥有对应板块（Group 行缺失/被改也能修复）
+      ensure_category_permissions(category, group) if category
       # 确保班级圈有对应 Chat 频道（新建/补建）
       ensure_chat_channel_for(category) if category
+
+      # 毕业生 / 离校 → 毕业生组：全部班级圈板块 full（可读可发帖，非只读）
+      grad_joined = false
+      if %w[毕业生 离校].include?(fields["status"]) && (g = graduate_group)
+        unless GroupUser.exists?(group_id: g.id, user_id: user.id)
+          GroupUser.find_or_create_by!(group: g, user: user)
+          grad_joined = true
+        end
+      end
+
+      { joined: joined, grad_joined: grad_joined, group: group, category: category }
+    end
+
+    # 板块权限自愈（幂等）：本班群组 full、staff full、教师 readonly、毕业生 full。
+    # 行已存在且权限正确时不写库；其余自定义授权组合并保留。
+    def self.ensure_category_permissions(cat, class_group)
+      return if cat.nil? || class_group.nil?
+      full = CategoryGroup.permission_types[:full]
+      readonly = CategoryGroup.permission_types[:readonly]
+      desired = { class_group.id => full, Group[:staff].id => full }
+      desired[teacher_group.id] = readonly if teacher_group
+      desired[graduate_group.id] = full if graduate_group
+
+      existing = CategoryGroup.where(category_id: cat.id).pluck(:group_id, :permission_type).to_h
+      return if desired.all? { |gid, type| existing[gid] == type }
+
+      cat.set_permissions(existing.merge(desired))
+      cat.save!
     end
 
     # 班级圈前缀：小学阶段(diff>=4)或初一未选班(diff==3 且无 junior_class) => xx；其余 => cz
@@ -127,16 +178,18 @@ module SchoolEngine
     end
 
     # "我已离校"（小升初弹窗选项）：小学毕业考去外校初中
-    # 状态改"离校"并加入毕业生组（历史班级圈只读），小学班级圈届数固定为中考年-3
+    # 状态改"离校"并加入毕业生组（历史班级圈可读可发帖），小学班级圈届数固定为中考年-3
     def self.mark_left_school!(user, now: Date.current)
       return false if user.custom_fields["status"].to_s != "在读"
 
       user.custom_fields["status"] = "离校"
       user.save_custom_fields(true)
 
-      # 加入毕业生组（历史班级圈以毕业生身份只读/访问）
+      # 加入毕业生组（以毕业生身份访问班级圈板块：full 权限，可读可发帖）
       g = Group.find_by(name: graduate_group)
-      g&.users&.<<(user) if g && !user.groups.exists?(id: g.id)
+      if g && !GroupUser.exists?(group_id: g.id, user_id: user.id)
+        GroupUser.find_or_create_by!(group: g, user: user)
+      end
 
       # 小学班级圈显示名固定为小学毕业届（中考年-3）
       gy = user.custom_fields["graduation_year"].to_i
@@ -177,6 +230,11 @@ module SchoolEngine
       User.where(id: gy_ids & reading_ids).find_each do |user|
         user.custom_fields["status"] = "毕业生"
         user.save_custom_fields(true)
+        # 加入毕业生组：班级圈板块保留 full 权限（毕业后可读可发帖，非只读）
+        if (g = graduate_group)
+          GroupUser.find_or_create_by!(group: g, user: user) unless GroupUser.exists?(group_id: g.id, user_id: user.id)
+        end
+        sync_for(user, now: now)
         fix_circle_display_name(user)
         notify(user, "恭喜毕业！你的账号和所有班级圈子已永久保留 🎓 欢迎以校友身份继续使用校园社区。")
 
@@ -302,12 +360,117 @@ module SchoolEngine
       created
     end
 
-    # ---- 基础结构（MVP：教师/毕业生组 + 四大基础分类）----
+    # ---- 一键重算（管理页按钮）：所有人的状态 + 群组成员 + 板块权限 + Chat 频道 ----
+    # 幂等：可反复执行。返回统计哈希供前端展示。
+    def self.recalculate_all!(now: Date.current)
+      stats = {
+        users: 0,
+        students: 0,
+        teachers: 0,
+        joined_groups: 0,
+        status_changed: 0,
+        circles: 0,
+        channels_created: 0,
+        errors: [],
+      }
 
+      # 基础组兜底
+      Group.find_or_create_by!(name: SiteSetting.school_engine_teacher_group)
+      Group.find_or_create_by!(name: SiteSetting.school_engine_graduate_group)
+
+      User.human_users.find_each do |user|
+        fields = UserCustomField.where(user_id: user.id).pluck(:name, :value).to_h
+        # 仅处理校园账号（有学籍字段者）
+        next if fields["identity"].blank? && fields["graduation_year"].blank? &&
+                  fields["status"].blank?
+        stats[:users] += 1
+
+        begin
+          if fields["identity"] == "teacher" || fields["status"] == "教师"
+            stats[:teachers] += 1
+            # 教师状态归一化（历史数据可能残留"在读"等）
+            if fields["identity"] == "teacher" && fields["status"] != "教师"
+              user.custom_fields["status"] = "教师"
+              user.save_custom_fields(true)
+              stats[:status_changed] += 1
+            end
+            result = sync_for(user, now: now)
+            stats[:joined_groups] += 1 if result[:teacher_joined]
+            next
+          end
+
+          gy = fields["graduation_year"].to_i
+          next if gy <= 0
+          stats[:students] += 1
+
+          # 状态重算（只升不降）：空白 → 在读；在读且已到毕业年 → 毕业生
+          status = fields["status"].to_s
+          new_status =
+            if status.empty?
+              "在读"
+            elsif status == "在读" && Grade.graduated?(fields, now: now)
+              "毕业生"
+            end
+          if new_status
+            user.custom_fields["status"] = new_status
+            user.save_custom_fields(true)
+            fields["status"] = new_status
+            stats[:status_changed] += 1
+          end
+
+          result = sync_for(user, now: now)
+          stats[:joined_groups] += 1 if result[:joined]
+          stats[:joined_groups] += 1 if result[:grad_joined]
+        rescue => e
+          stats[:errors] << "#{user.username}: #{e.message}"
+        end
+      end
+
+      # 权限/显示名/Chat 频道全量修复
+      fix_circle_permissions!
+      update_circle_display_names(now: now)
+      created = ensure_chat_channels!
+      stats[:channels_created] = created.length
+      stats[:circles] = Group.where("name LIKE 'xx-%' OR name LIKE 'cz-%'").count
+
+      # 立即按新板块权限补一轮 Chat 频道自动加入（定时任务每小时也会跑）
+      if defined?(::Chat::AutoJoinChannels)
+        begin
+          ::Chat::AutoJoinChannels.call(params: {})
+        rescue => e
+          Rails.logger.warn("school-engine: 重算后 Chat 自动加入失败: #{e.message}")
+        end
+      end
+
+      stats
+    end
+
+    # ---- 基础结构 ----
+    # 只确保学制引擎运转所需的两个群组（名称可在站点设置中修改，留空则跳过）。
+    # 不创建任何板块/标签：板块由管理员自行规划，匿名/精选等行为通过
+    # 站点设置 school_engine_category_rules 绑定到任意分类。
+    # 需要一键创建默认板块模板时，请显式执行 seed_default_categories!。
     def self.setup_base_structure
-      teachers = Group.find_or_create_by!(name: SiteSetting.school_engine_teacher_group)
-      graduates = Group.find_or_create_by!(name: SiteSetting.school_engine_graduate_group)
+      result = { teachers: nil, graduates: nil }
 
+      teacher_name = SiteSetting.school_engine_teacher_group.to_s.strip
+      if teacher_name.present?
+        result[:teachers] = Group.find_or_create_by!(name: teacher_name)
+      end
+
+      graduate_name = SiteSetting.school_engine_graduate_group.to_s.strip
+      if graduate_name.present?
+        result[:graduates] = Group.find_or_create_by!(name: graduate_name)
+      end
+
+      result
+    end
+
+    # 可选的默认板块模板（幂等）。仅在管理员显式调用（rake school_engine:seed_categories）时执行：
+    # 校园闲聊 / 知识分享 / 表白墙(可选匿名) / 匿名墙(强制匿名) / 校园公告
+    # 创建后随时可在后台改名、调整权限或删除；匿名行为以 school_engine_category_rules 设置为准。
+    def self.seed_default_categories!
+      teachers = teacher_group
       staff = Group[:staff]
       full = CategoryGroup.permission_types[:full]
       readonly = CategoryGroup.permission_types[:readonly]
@@ -321,24 +484,23 @@ module SchoolEngine
       ]
 
       everyone = Group[:everyone]
+      created = []
       defs.each do |d|
         next if Category.find_by(slug: d[:slug])
         perms = d[:perms].dup
         if d[:slug] == "announce"
           perms[everyone] = readonly
-          perms[teachers] = full
+          perms[teachers] = full if teachers
         else
           perms[everyone] = full
         end
         cat = Category.new(name: d[:name], slug: d[:slug], color: d[:color], user: Discourse.system_user)
         cat.set_permissions(perms)
         cat.save!
+        created << d[:slug]
       end
 
-      # 表达空间固定标签种子（幂等）
-      SchoolEngine::Tags.ensure_tags!
-
-      { teachers: teachers, graduates: graduates }
+      created
     end
 
     # ---- 工具 ----

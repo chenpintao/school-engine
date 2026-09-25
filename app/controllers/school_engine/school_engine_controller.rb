@@ -15,7 +15,8 @@ module SchoolEngine
 
     # staff 专属操作（联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
     before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
-    before_action :ensure_school_admin, only: %i[admin_users admin_update_user admin_classes admin_fix_displays]
+    before_action :ensure_school_admin,
+                  only: %i[admin_users admin_update_user admin_classes admin_fix_displays admin_recircle]
 
     CONTACT_KEYS = %w[phone real_email wechat qq other_social].freeze
 
@@ -734,9 +735,16 @@ module SchoolEngine
     # POST /school/admin-fix-displays.json —— 全量修正班级圈显示名（届数规则变更后可用）
     def admin_fix_displays
       SchoolEngine::ClassCircle.update_circle_display_names
-      SchoolEngine::Tags.ensure_tags!
       backfill_name_initials!
       render json: success_json
+    end
+
+    # POST /school/admin-recircle.json —— 一键重新计算所有人的状态 / 群组 / 板块 / Chat 频道
+    def admin_recircle
+      stats = SchoolEngine::ClassCircle.recalculate_all!
+      render json: success_json.merge(stats)
+    rescue => e
+      render json: { errors: [e.message] }, status: :unprocessable_entity
     end
 
     # 为老用户回填拼音首字母（历史数据 real_name 存在但 real_name_initials 缺失）

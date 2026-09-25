@@ -4,7 +4,7 @@ zh_CN:
     school_engine_teacher_group: "教师组名（班级圈中教师只读权限）"
     school_engine_graduate_group: "毕业生组名（历史班级圈只读权限）"
     school_engine_class_admin_group: "班级管理组名（该组成员可使用校园管理 API，留空则仅管理员）"
-    school_engine_category_rules: "分类匿名规则列表，每行一条『分类slug:模式』；模式：forced 强制匿名 / optional 回帖可选匿名 / disabled 禁止。例：confess:optional；留空使用内置默认"
+    school_engine_category_rules: "分类匿名规则列表，每行一条『分类slug:模式』；插件不会创建板块，请先自建板块再按 slug 绑定。模式：forced 强制匿名 / optional 回帖可选匿名（精选/胶囊作用于此）/ disabled 禁止。清空则全部关闭；班级圈板块恒不匿名"
     school_engine_feature_enabled: "启用每日精选功能"
     school_engine_capsule_enabled: "启用时光胶囊功能（精选/点赞自动封存与学期报告）"
     school_engine_mood_enabled: "启用每日心情签到与热力图"

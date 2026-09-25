@@ -12,13 +12,9 @@ import { i18n } from "discourse-i18n";
  * 可见条件：精选功能开启 + staff + optional 可选匿名分类 + 回帖（post_number > 1）。
  * 精选状态来自 PostSerializer 的 school_featured 字段。
  */
-const FALLBACK_RULES = [
-  { slug: "confess", mode: "optional" },
-  { slug: "anonymous-wall", mode: "forced" },
-];
-
 const parseRuleLines = (lines) =>
-  (Array.isArray(lines) ? lines : String(lines || "").split("\n"))
+  // Discourse list 设置以 "|" 分隔存储；同时兼容换行（textarea 粘贴）
+  (Array.isArray(lines) ? lines : String(lines || "").split(/[|\n]/))
     .map((line) => {
       const [slug, mode] = line.split(":");
       return { slug: slug?.trim(), mode: mode?.trim() };
@@ -32,8 +28,8 @@ export default class SchoolFeatureButton extends Component {
   @tracked saving = false;
 
   get rules() {
-    const parsed = parseRuleLines(this.siteSettings.school_engine_category_rules);
-    return parsed.length ? parsed : FALLBACK_RULES;
+    // 规则完全来自站点设置；为空（清空设置）时不对任何板块生效
+    return parseRuleLines(this.siteSettings.school_engine_category_rules);
   }
 
   get visible() {

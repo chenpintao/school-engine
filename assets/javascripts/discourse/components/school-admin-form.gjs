@@ -48,6 +48,8 @@ export default class SchoolAdminForm extends Component {
   // 班级圈
   @tracked classes = [];
   @tracked fixing = false;
+  @tracked recircling = false;
+  @tracked recircleResult = null;
 
   get hasMore() {
     return this.users.length < this.total;
@@ -144,6 +146,45 @@ export default class SchoolAdminForm extends Component {
       });
   }
 
+  get recircleSummary() {
+    const r = this.recircleResult;
+    if (!r) {
+      return null;
+    }
+    return i18n("school_engine.admin_recircle_done", {
+      users: r.users ?? 0,
+      students: r.students ?? 0,
+      teachers: r.teachers ?? 0,
+      joined_groups: r.joined_groups ?? 0,
+      status_changed: r.status_changed ?? 0,
+      circles: r.circles ?? 0,
+      channels_created: r.channels_created ?? 0,
+    });
+  }
+
+  get recircleErrors() {
+    const errors = this.recircleResult?.errors;
+    return Array.isArray(errors) && errors.length ? errors.join("；") : null;
+  }
+
+  @action
+  recircleAll() {
+    this.recircling = true;
+    this.notice = null;
+    this.recircleResult = null;
+    ajax("/school/admin-recircle.json", { type: "POST" })
+      .then((res) => {
+        this.recircling = false;
+        this.recircleResult = res;
+        this.loadClasses();
+        this.load();
+      })
+      .catch((e) => {
+        this.recircling = false;
+        popupAjaxError(e);
+      });
+  }
+
   @action
   queryKeydown(event) {
     if (event.key === "Enter") {
@@ -214,6 +255,61 @@ export default class SchoolAdminForm extends Component {
         {{#if this.notice}}
           <div class="school-profile-saved">{{this.notice}}</div>
         {{/if}}
+
+        <section class="school-admin-section school-admin-circles">
+          <h3 class="school-admin-section-title">{{i18n "school_engine.admin_tab_classes"}}</h3>
+          <p class="school-admin-section-desc">{{i18n "school_engine.admin_recircle_desc"}}</p>
+          <div class="school-admin-actions">
+            <DButton
+              @label="school_engine.admin_recircle_btn"
+              @icon="sync"
+              @type="primary"
+              @action={{this.recircleAll}}
+              @isLoading={{this.recircling}}
+            />
+            <DButton
+              @label="school_engine.admin_fix_displays"
+              @action={{this.fixDisplays}}
+              @isLoading={{this.fixing}}
+              class="btn-default"
+            />
+          </div>
+          {{#if this.recircleSummary}}
+            <div class="school-profile-saved">{{this.recircleSummary}}</div>
+          {{/if}}
+          {{#if this.recircleErrors}}
+            <div class="school-admin-error">{{this.recircleErrors}}</div>
+          {{/if}}
+          <table class="school-admin-table">
+            <thead>
+              <tr>
+                <th>{{i18n "school_engine.admin_col_group"}}</th>
+                <th>{{i18n "school_engine.admin_col_members"}}</th>
+                <th>{{i18n "school_engine.admin_col_category"}}</th>
+                <th>{{i18n "school_engine.admin_col_chat"}}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each this.classes as |c|}}
+                <tr>
+                  <td>
+                    {{c.full_name}}
+                    <span class="school-admin-group-name">（{{c.group_name}}）</span>
+                  </td>
+                  <td>{{c.user_count}}</td>
+                  <td>{{c.category_name}}</td>
+                  <td>
+                    {{#if c.chat}}
+                      {{i18n "school_engine.admin_chat_yes"}}
+                    {{else}}
+                      {{i18n "school_engine.admin_chat_no"}}
+                    {{/if}}
+                  </td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </section>
 
         <section class="school-admin-section">
           <h3 class="school-admin-section-title">{{i18n "school_engine.admin_tab_users"}}</h3>

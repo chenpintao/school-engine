@@ -38,6 +38,8 @@ SchoolEngine::Engine.routes.draw do
   put "/school/admin-user" => "school_engine#admin_update_user"
   get "/school/admin-classes" => "school_engine#admin_classes"
   post "/school/admin-fix-displays" => "school_engine#admin_fix_displays"
+  # 一键重新计算所有人的状态 / 班级圈群组 / 板块权限 / Chat 频道
+  post "/school/admin-recircle" => "school_engine#admin_recircle"
 
   get "/school/directory" => "school_engine#directory",
       constraints: ->(req) { req.format.json? }

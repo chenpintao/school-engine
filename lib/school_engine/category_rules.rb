@@ -10,26 +10,26 @@ module SchoolEngine
   #   forced   强制：主题 OP + 回帖全部匿名（原匿名墙行为）
   #   optional 可选：仅回帖可勾选昵称 / 匿名（原表达空间行为；精选/胶囊只作用于这类分类）
   #   disabled 禁止：该分类不允许匿名
-  # 设置为空时使用 DEFAULT_RULES，保证全新部署行为与旧硬编码完全一致。
+  # 规则完全以站点设置为准（设置默认值见 config/settings.yml，后台可见可删改）；
+  # 设置为空时不对任何板块生效。板块由管理员自行创建，插件不强制。
   module CategoryRules
     MODES = %w[forced optional disabled].freeze
     SETTING = :school_engine_category_rules
 
-    DEFAULT_RULES = [
-      { "slug" => "confess", "mode" => "optional" },
-      { "slug" => "anonymous-wall", "mode" => "forced" },
-    ].freeze
+    # 班级圈板块（xx-class-2029-1 / cz-class-2029-3 等）永远不允许匿名：
+    # 群组内发帖一律实名/昵称，设置项中即使误配也不生效
+    CLASS_CIRCLE_SLUG_REGEX = %r{\A(?:xx|cz)-class-\d{4}-}
 
     def self.raw_lines
+      # Discourse list 型设置以 "|" 分隔存储；同时兼容换行（textarea 直接粘贴）
       value = SiteSetting.public_send(SETTING)
-      lines = value.is_a?(Array) ? value : value.to_s.split("\n")
+      lines = value.is_a?(Array) ? value : value.to_s.split(/[|\n]/)
       lines.map { |l| l.to_s.strip }.reject(&:blank?)
     end
 
     # 有效规则数组（slug 非空、mode 合法；同 slug 后者覆盖前者）
     def self.rules
       lines = raw_lines
-      return DEFAULT_RULES.map(&:dup) if lines.empty?
 
       result = {}
       lines.each do |line|
@@ -43,7 +43,19 @@ module SchoolEngine
       result.map { |slug, mode| { "slug" => slug, "mode" => mode } }
     end
 
+    # 班级圈板块判定
+    def self.class_circle?(category_or_slug)
+      slug =
+        if category_or_slug.is_a?(::String)
+          category_or_slug
+        else
+          category_or_slug&.slug
+        end
+      slug.to_s.match?(CLASS_CIRCLE_SLUG_REGEX)
+    end
+
     # 按分类对象或 slug 查模式（"forced" / "optional" / "disabled" / nil）
+    # 班级圈板块恒为 disabled（默认且强制不匿名）
     def self.mode_for(category_or_slug)
       slug =
         if category_or_slug.is_a?(::String)
@@ -52,6 +64,7 @@ module SchoolEngine
           category_or_slug&.slug
         end
       return nil if slug.blank?
+      return "disabled" if slug.match?(CLASS_CIRCLE_SLUG_REGEX)
 
       rules.find { |rule| rule["slug"] == slug }&.[]("mode")
     end

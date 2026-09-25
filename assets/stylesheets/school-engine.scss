@@ -723,6 +723,36 @@
   color: var(--danger);
 }
 
+.school-admin-section-desc {
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  margin-bottom: 0.75rem;
+}
+
+.school-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.school-admin-group-name {
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+}
+
+.school-admin-error {
+  color: var(--danger);
+  font-size: var(--font-down-1);
+  margin-bottom: 0.75rem;
+}
+
+.school-admin-circles {
+  .school-profile-saved {
+    margin-bottom: 0.75rem;
+  }
+}
+
 .school-field-toggle {
   margin-top: 1rem;
 }

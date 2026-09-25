@@ -7,14 +7,14 @@ module SchoolEngine
     wrap_parameters false
 
     # register_user/home/feed/moods 放行匿名（注册必须公开；首页卡片与心情历史供未登录浏览）
-    requires_login except: %i[register_user home feed moods]
+    requires_login except: %i[register_user home feed moods featured_one]
     # login_required=true 时未登录 JSON/XHR 会被全局拦截，这些接口同样需要放行重定向回调。
     # 注意：requires_login 自身注册的是 block_if_requires_login，已由上面的 except 排除，不要再 skip 不存在的回调。
-    skip_before_action :redirect_to_login_if_required, only: %i[register_user home feed moods]
+    skip_before_action :redirect_to_login_if_required,
+                       only: %i[register_user home feed moods featured_one]
 
-    # staff 专属操作（含联系方式导出、插件配置）走 guardian；管理类 API 允许"班级管理组"细分授权
-    before_action :ensure_staff,
-                  only: %i[directory_export feature_post unfeature_post config update_config]
+    # staff 专属操作（联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
+    before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
     before_action :ensure_school_admin, only: %i[admin_users admin_update_user admin_classes admin_fix_displays]
 
     CONTACT_KEYS = %w[phone real_email wechat qq other_social].freeze
@@ -36,6 +36,12 @@ module SchoolEngine
                    SchoolEngine::Mood.today(current_user)
                  end,
              }
+    end
+
+    # GET /school/featured.json —— 首页精选区块：1 个精选话题 + 最多 3 条精选回帖
+    def featured_one
+      return render json: { topic: nil } unless SiteSetting.school_engine_feature_enabled
+      render json: { topic: featured_topic_one }
     end
 
     # POST /school/mood-checkin.json —— 今日心情签到/改签（mood: 1-5）
@@ -61,36 +67,6 @@ module SchoolEngine
       mood_map =
         SiteSetting.school_engine_mood_enabled ? SchoolEngine::Mood.recent_map(user, days) : {}
       render json: { moods: mood_map }
-    end
-
-    # GET /school/config.json —— 配置页数据（staff；分类匿名规则 + 功能开关 + 参数）
-    def config
-      render json: {
-               category_rules: SchoolEngine::CategoryRules.rules,
-               features: config_features,
-               settings: config_settings,
-             }
-    end
-
-    # PUT /school/config.json —— 保存配置（staff；写 SiteSetting）
-    def update_config
-      rules = SchoolEngine::CategoryRules.update!(params[:category_rules] || [])
-
-      config_features.each do |key, _|
-        value = params[:features]&.[](key)
-        SiteSetting.public_send("#{key}=", value == true || value == "true")
-      end
-
-      update_config_setting(:school_engine_featured_per_day, params.dig("settings", "featured_per_day"))
-      update_config_setting(:school_engine_capsule_like_threshold, params.dig("settings", "capsule_like_threshold"))
-      SiteSetting.school_engine_semester_end_1 = params.dig("settings", "semester_end_1").to_s
-      SiteSetting.school_engine_semester_end_2 = params.dig("settings", "semester_end_2").to_s
-
-      render json: {
-               category_rules: rules,
-               features: config_features,
-               settings: config_settings,
-             }
     end
 
     # GET /school/junior-class-status.json
@@ -521,6 +497,52 @@ module SchoolEngine
       }
     end
 
+    # 首页精选区块：优先取当天精选回帖（数量同每日配额，上限 3），
+    # 选出其中精选条数最多的话题；该话题不足 3 条时用同话题其他精选补齐。
+    # 当天没有精选则回退最近一批，任何精选都没有时返回 nil。
+    def featured_topic_one
+      base =
+        Post
+          .joins(:topic)
+          .joins(
+            "JOIN post_custom_fields school_one_feat ON school_one_feat.post_id = posts.id " \
+              "AND school_one_feat.name = 'school_featured'"
+          )
+          .joins(
+            "JOIN post_custom_fields school_one_at ON school_one_at.post_id = posts.id " \
+              "AND school_one_at.name = 'school_featured_at'"
+          )
+          .where(topic_id: expression_topics.select(:id))
+          .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
+          .where("posts.post_number > 1")
+
+      now = Time.zone.now
+      posts =
+        base
+          .where("school_one_at.value >= ? AND school_one_at.value < ?",
+                 now.beginning_of_day.utc.iso8601, now.end_of_day.utc.iso8601)
+          .order("school_one_at.value DESC")
+          .limit([SiteSetting.school_engine_featured_per_day.to_i, 3].min)
+          .to_a
+      posts = base.order("school_one_at.value DESC").limit(3).to_a if posts.empty?
+      return nil if posts.empty?
+
+      topic_id = posts.group_by(&:topic_id).max_by { |_, list| list.length }.first
+      replies = posts.select { |post| post.topic_id == topic_id }
+      if replies.length < 3
+        replies +=
+          base
+            .where(topic_id: topic_id)
+            .where.not(id: replies.map(&:id))
+            .order("school_one_at.value DESC")
+            .limit(3 - replies.length)
+            .to_a
+      end
+
+      topic = replies.first.topic
+      { title: topic&.title, url: topic&.relative_url, replies: replies.map { |p| feed_reply(p) } }
+    end
+
     # 最新帖（按 bumped_at）；只取当前用户可读分类，精选话题由前端剔除
     def latest_topics
       category_ids =
@@ -553,34 +575,6 @@ module SchoolEngine
           posts_count: topic.posts_count,
         }
       end
-    end
-
-    # ---- 配置页：功能开关 / 参数序列化 ----
-
-    CONFIG_FEATURE_KEYS = %i[
-      school_engine_feature_enabled
-      school_engine_capsule_enabled
-      school_engine_mood_enabled
-      school_engine_tags_enabled
-    ].freeze
-
-    def config_features
-      CONFIG_FEATURE_KEYS.map { |key| [key, SiteSetting.public_send(key)] }.to_h
-    end
-
-    def config_settings
-      {
-        featured_per_day: SiteSetting.school_engine_featured_per_day,
-        capsule_like_threshold: SiteSetting.school_engine_capsule_like_threshold,
-        semester_end_1: SiteSetting.school_engine_semester_end_1,
-        semester_end_2: SiteSetting.school_engine_semester_end_2,
-      }
-    end
-
-    # 整数设置写入：非正数视为非法，保留原值
-    def update_config_setting(key, value)
-      integer = value.to_i
-      SiteSetting.public_send("#{key}=", integer) if integer.positive?
     end
 
     # "不给老师看"主题 id 子查询（供 timeline 教师视角过滤）
@@ -868,7 +862,7 @@ module SchoolEngine
 
     # DC 权限体系：staff 校验统一入口（guardian 全局 rescue → 403）
     def ensure_staff
-      guardian.ensure_staff!
+      guardian.ensure_is_staff!
     end
 
     # 细分授权：staff 或"班级管理组"成员均可管理学籍（全局 rescue → 403）

@@ -16,13 +16,20 @@ namespace :school_engine do
   desc "把已有用户同步进班级圈（含 Chat 频道）"
   task sync_all: :environment do
     count = 0
+    errors = []
     User.human_users.find_each do |user|
-      SchoolEngine::ClassCircle.on_user_created(user)
+      SchoolEngine::ClassCircle.sync_for(user)
       count += 1
+    rescue => e
+      errors << "#{user.username}: #{e.message}"
     end
     SchoolEngine::ClassCircle.fix_circle_permissions!
     created = SchoolEngine::ClassCircle.ensure_chat_channels!
     puts "✅ 已同步 #{count} 个用户，新建 Chat 频道: #{created.join(', ').presence || '无'}"
+    if errors.any?
+      puts "⚠️  #{errors.length} 个用户同步失败:"
+      errors.each { |e| puts "  - #{e}" }
+    end
   end
 
   desc "立即执行毕业标记（调试用）"

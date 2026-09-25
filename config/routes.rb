@@ -12,16 +12,13 @@ SchoolEngine::Engine.routes.draw do
       constraints: ->(req) { req.format.html? }
   get "/school/register" => "school_engine_pages#register"
   get "/school/login" => "school_engine_pages#login"
-  # 管理页（班级管理组入口；/admin/school-classes 为 staff 后台入口，两者渲染同一 SPA）
+  # 管理页（班级管理组入口；staff 经后台管理菜单同一入口进入）
   get "/school/manage" => "school_engine_pages#manage", constraints: { format: /html/ }
-  get "/school/config" => "school_engine_pages#config_page",
-      constraints: ->(req) { req.format.html? }
 
   # ---- 业务 API ----
   get "/school/home" => "school_engine#home"
   get "/school/feed" => "school_engine#feed"
-  get "/school/config" => "school_engine#config"
-  put "/school/config" => "school_engine#update_config"
+  get "/school/featured" => "school_engine#featured_one"
   get "/school/moods/:username" => "school_engine#moods"
   post "/school/mood-checkin" => "school_engine#mood_checkin"
   get "/school/junior-class-status" => "school_engine#junior_class_status"
@@ -49,7 +46,4 @@ SchoolEngine::Engine.routes.draw do
   post "/school/feature-post" => "school_engine#feature_post"
   post "/school/unfeature-post" => "school_engine#unfeature_post"
   post "/school/transfer-class" => "school_engine#transfer_class"
-
-  # ---- 管理后台 ----
-  get "/admin/school-classes" => "school_engine_pages#admin_page", constraints: ::StaffConstraint.new
 end

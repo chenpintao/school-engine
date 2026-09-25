@@ -78,26 +78,34 @@ after_initialize do
   # ---- 路由（通过 Rails::Engine 挂载，让 app/controllers 自动 autoload）----
   Discourse::Application.routes.append { mount ::SchoolEngine::Engine, at: "/" }
 
-  # 首页保持 Discourse 原生 discovery（/ → latest）；
-  # "今日话题 + 精选回帖"通过 above-discovery-list-container outlet 以原生组件注入。
+  # ---- 默认主页：/latest（DC 原生）----
+  # DC 默认主页 = top_menu 首项。早期版本曾把 hot 置顶，这里启动时撤销该改动：
+  # 若首项是 hot 则移除，恢复 latest 为首位（其余顺序保留）。
+  begin
+    current = SiteSetting.top_menu.to_s
+    if current.start_with?("hot|")
+      SiteSetting.top_menu = current.sub(/\Ahot\|/, "")
+    elsif current == "hot"
+      SiteSetting.top_menu = "latest|new|unread|top"
+    end
+    # 欢迎横幅：启用且仅首页显示（心情签到挂在横幅出口内，有横幅处即有签到）
+    SiteSetting.enable_welcome_banner = true unless SiteSetting.enable_welcome_banner
+    if SiteSetting.welcome_banner_page_visibility.blank? ||
+       SiteSetting.welcome_banner_page_visibility == "top_menu_pages"
+      SiteSetting.welcome_banner_page_visibility = "homepage"
+    end
+  rescue => e
+    Rails.logger.warn("school-engine: 默认主页/欢迎横幅设置失败: #{e.message}")
+  end
 
   # ---- 事件钩子 ----
+  # 班级圈功能已下线：不再自动建圈/同步（保留 ClassCircle 代码以便将来恢复）
   on(:user_created) do |user|
-    next unless SiteSetting.school_engine_enabled
-    begin
-      SchoolEngine::ClassCircle.on_user_created(user)
-    rescue => e
-      Rails.logger.warn("school-engine: user_created 处理失败 user=#{user&.id}: #{e.message}")
-    end
+    # no-op（班级圈已下线）
   end
 
   on(:user_updated) do |user|
-    next unless SiteSetting.school_engine_enabled
-    begin
-      SchoolEngine::ClassCircle.on_user_updated(user)
-    rescue => e
-      Rails.logger.warn("school-engine: user_updated 处理失败 user=#{user&.id}: #{e.message}")
-    end
+    # no-op（班级圈已下线）
   end
 
   # 表白墙分类的帖子/回帖自动标记匿名（真实 user_id 保留，管理员可溯源）
@@ -222,6 +230,22 @@ after_initialize do
   # 当前用户是否为教师（composer 开关 / 管理界面等前端权限判断用）
   add_to_serializer(:current_user, :school_teacher) do
     SchoolEngine::Visibility.teacher?(object)
+  end
+
+  # 个人主页展示用：该用户已填写的联系方式（school_contacts）
+  # 本人 / staff：可见全部有值字段；其他登录用户（含教师）：仅 contact_visibility_* 公开的字段
+  add_to_serializer(:user, :school_contacts, false) do
+    next nil unless scope&.user
+    result = {}
+    SchoolEngine::SchoolEngineController::CONTACT_KEYS.each do |k|
+      val = object.custom_fields["contact_#{k}"].to_s.strip
+      next if val.empty?
+      visible = SchoolEngine::SchoolEngineController.contact_visible?(object.custom_fields, k)
+      is_self_or_staff = scope.user.id == object.id || scope.is_staff?
+      next unless is_self_or_staff || visible
+      result[k] = val
+    end
+    result.presence
   end
 
   # ---- 隐藏重构后不需要的站点设置项（外部登录 / S3 / 邮件收发 / MaxMind / 广告等）----

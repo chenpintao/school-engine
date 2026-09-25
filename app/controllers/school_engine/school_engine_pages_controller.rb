@@ -6,12 +6,10 @@ module SchoolEngine
     requires_plugin "school-engine"
 
     # 所有 SPA shell 页面都是浏览器直接 GET HTML，必须跳过 check_xhr（否则被兜成 RenderEmpty/"empty"）
-    # 登录/注册额外放行未登录访问；其余页面（profile/directory/manage/admin）仍走原生登录校验
+    # 登录/注册额外放行未登录访问；其余页面（profile/directory/manage）仍走原生登录校验
     skip_before_action :check_xhr
     skip_before_action :redirect_to_login_if_required, only: %i[register login]
     before_action :redirect_if_logged_in, only: %i[register login]
-    # 纵深防御：admin 页面除路由层 StaffConstraint 外，控制器层再走一次 guardian
-    before_action :ensure_staff_page, only: :admin_page
 
     # GET /school/register
     def register
@@ -33,22 +31,9 @@ module SchoolEngine
       render "school_engine_pages/spa", layout: "application"
     end
 
-    # GET /admin/school-classes（admin 管理菜单进入，SPA shell；StaffConstraint + guardian 双重校验）
-    def admin_page
-      render "school_engine_pages/spa", layout: "application"
-    end
-
-    # GET /school/manage（班级管理组入口，页面壳；数据 API 在控制器层做 school_admin 校验）
+    # GET /school/manage（班级管理组与 staff 同一入口，页面壳；
+    # 权限由 manage-status 判定，数据 API 在控制器层做 school_admin 校验）
     def manage
-      render "school_engine_pages/spa", layout: "application"
-    end
-
-    # GET /school/config（插件配置页 shell；staff 才能访问，数据 API 另有 guardian 校验）
-    # 注意：动作名不可用 `config`——ActionView 渲染时会内部调用 controller.config，
-    # 撞名会导致本控制器所有页面渲染抛 InvalidAccess（见 2026-09-24 问题清单 P12）。
-    def config_page
-      raise Discourse::InvalidAccess.new unless current_user&.staff?
-
       render "school_engine_pages/spa", layout: "application"
     end
 
@@ -56,10 +41,6 @@ module SchoolEngine
 
     def redirect_if_logged_in
       redirect_to "/" if current_user.present?
-    end
-
-    def ensure_staff_page
-      guardian.ensure_staff!
     end
   end
 end

@@ -6,7 +6,7 @@ import { i18n } from "discourse-i18n";
 
 /**
  * 匿名身份控件（composer-fields outlet），分类行为全部来自
- * siteSettings.school_engine_category_rules（/school/config 配置页表单维护）：
+ * 原生站点设置 siteSettings.school_engine_category_rules（list 型，每行 "slug:mode"）：
  * - forced 强制：发主题或回帖、任何身份都整分类匿名，仅提示，无需也不接受选择；
  *   服务端 post_created 无条件打匿名标记。
  * - optional 可选：仅回帖（reply）、非 staff、非教师可见昵称 / 匿名二选一，
@@ -18,6 +18,14 @@ const FALLBACK_RULES = [
   { slug: "confess", mode: "optional" },
   { slug: "anonymous-wall", mode: "forced" },
 ];
+
+const parseRuleLines = (lines) =>
+  (Array.isArray(lines) ? lines : String(lines || "").split("\n"))
+    .map((line) => {
+      const [slug, mode] = line.split(":");
+      return { slug: slug?.trim(), mode: mode?.trim() };
+    })
+    .filter((rule) => rule.slug && ["forced", "optional", "disabled"].includes(rule.mode));
 
 export default class SchoolAnonymousChoice extends Component {
   @service currentUser;
@@ -34,12 +42,8 @@ export default class SchoolAnonymousChoice extends Component {
   }
 
   get rules() {
-    try {
-      const parsed = JSON.parse(this.siteSettings.school_engine_category_rules || "[]");
-      return Array.isArray(parsed) && parsed.length ? parsed : FALLBACK_RULES;
-    } catch {
-      return FALLBACK_RULES;
-    }
+    const parsed = parseRuleLines(this.siteSettings.school_engine_category_rules);
+    return parsed.length ? parsed : FALLBACK_RULES;
   }
 
   get mode() {

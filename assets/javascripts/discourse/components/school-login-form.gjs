@@ -20,7 +20,16 @@ export default class SchoolLoginForm extends Component {
   @tracked submitting = false;
 
   @action
-  doLogin() {
+  onEnterKey(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.target.closest("form").requestSubmit();
+    }
+  }
+
+  @action
+  doLogin(event) {
+    event?.preventDefault?.();
     this.error = null;
     if (!this.loginName.trim() || !this.password) {
       this.error = i18n("school_engine.err_login");
@@ -69,16 +78,18 @@ export default class SchoolLoginForm extends Component {
       <h2>{{i18n "school_engine.login_title"}}</h2>
       <p class="school-subtitle">{{i18n "school_engine.login_subtitle"}}</p>
 
-      <div class="school-field">
-        <label>{{i18n "school_engine.username"}}</label>
-        <Input @type="text" @value={{this.loginName}} autocomplete="username" />
-      </div>
-      <div class="school-field">
-        <label>{{i18n "school_engine.password"}}</label>
-        <Input @type="password" @value={{this.password}} autocomplete="current-password" />
-      </div>
+      <form {{on "submit" this.doLogin}}>
+        <div class="school-field">
+          <label>{{i18n "school_engine.username"}}</label>
+          <Input @type="text" @value={{this.loginName}} autocomplete="username" {{on "keydown" this.onEnterKey}} />
+        </div>
+        <div class="school-field">
+          <label>{{i18n "school_engine.password"}}</label>
+          <Input @type="password" @value={{this.password}} autocomplete="current-password" {{on "keydown" this.onEnterKey}} />
+        </div>
 
-      <DButton @label="school_engine.login" @type="primary" @action={{this.doLogin}} @isLoading={{this.submitting}} class="school-submit-btn" />
+        <DButton @label="school_engine.login" @type="primary" @buttonType="submit" @isLoading={{this.submitting}} class="school-submit-btn" />
+      </form>
 
       <p class="school-switch">
         <a href="#" {{on "click" this.goRegister}}>{{i18n "school_engine.no_account"}}</a>

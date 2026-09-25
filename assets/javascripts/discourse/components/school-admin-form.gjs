@@ -17,7 +17,8 @@ const STATUSES = ["在读", "毕业生", "离校"];
 const IDENTITIES = ["student", "teacher"];
 
 /**
- * 校园管理页（/admin/school-classes staff 入口、/school/manage 班级管理组入口）。
+ * 校园管理页（/school/manage 唯一入口，staff 与班级管理组共用）。
+ * 单页纵向呈现全部管理区块（无 tab、无独立子页面）：
  *  - 学籍管理：列表 + 筛选 + 编辑（毕业年份/班级/初中班级/状态/姓名，无视转班冷却）
  *  - 班级圈管理：圈列表（组/分类/人数/频道）+ 一键修正显示名
  * 权限由 manage-status 判定（staff 或班级管理组），数据 API 在后端二次校验。
@@ -25,7 +26,6 @@ const IDENTITIES = ["student", "teacher"];
 export default class SchoolAdminForm extends Component {
   @service currentUser;
 
-  @tracked tab = "users";
   @tracked loading = false;
   @tracked allowed = null;
   @tracked error = null;
@@ -59,11 +59,6 @@ export default class SchoolAdminForm extends Component {
   }
 
   @action
-  setTab(tab) {
-    this.tab = tab;
-  }
-
-  @action
   load() {
     this.loading = true;
     this.error = null;
@@ -81,7 +76,10 @@ export default class SchoolAdminForm extends Component {
         this.total = res.total || 0;
         this.loading = false;
       })
-      .catch(popupAjaxError);
+      .catch((e) => {
+        this.loading = false;
+        popupAjaxError(e);
+      });
   }
 
   @action
@@ -100,7 +98,10 @@ export default class SchoolAdminForm extends Component {
         this.users = this.users.concat(res.users || []);
         this.loading = false;
       })
-      .catch(popupAjaxError);
+      .catch((e) => {
+        this.loading = false;
+        popupAjaxError(e);
+      });
   }
 
   @action
@@ -137,12 +138,10 @@ export default class SchoolAdminForm extends Component {
         this.notice = i18n("school_engine.admin_fix_done");
         this.loadClasses();
       })
-      .catch(popupAjaxError);
-  }
-
-  @action
-  filterChanged() {
-    this.load();
+      .catch((e) => {
+        this.fixing = false;
+        popupAjaxError(e);
+      });
   }
 
   @action
@@ -212,26 +211,13 @@ export default class SchoolAdminForm extends Component {
       {{#if (eq this.allowed false)}}
         <p class="school-admin-denied">{{i18n "school_engine.admin_no_permission"}}</p>
       {{else if this.allowed}}
-        <div class="school-admin-tabs">
-          <DButton
-            @label="school_engine.admin_tab_users"
-            @action={{fn this.setTab "users"}}
-            @type={{if (eq this.tab "users") "primary" "default"}}
-            class="school-admin-tab"
-          />
-          <DButton
-            @label="school_engine.admin_tab_classes"
-            @action={{fn this.setTab "classes"}}
-            @type={{if (eq this.tab "classes") "primary" "default"}}
-            class="school-admin-tab"
-          />
-        </div>
-
         {{#if this.notice}}
           <div class="school-profile-saved">{{this.notice}}</div>
         {{/if}}
 
-        {{#if (eq this.tab "users")}}
+        <section class="school-admin-section">
+          <h3 class="school-admin-section-title">{{i18n "school_engine.admin_tab_users"}}</h3>
+
           <div class="school-admin-filters">
             <div class="school-field">
               <label>{{i18n "school_engine.admin_filter_status"}}</label>
@@ -294,7 +280,12 @@ export default class SchoolAdminForm extends Component {
                     {{/if}}
                   </td>
                   <td>{{u.real_name}}</td>
-                  <td>{{u.graduation_year}} · {{u.junior_class}}{{u.class_name}}</td>
+                  <td>
+                    {{u.graduation_year}}届 · {{u.class_name}}
+                    {{#if u.junior_class}}
+                      <span class="school-admin-junior">（初中{{u.junior_class}}）</span>
+                    {{/if}}
+                  </td>
                   <td>{{u.status}}</td>
                   <td>{{u.display_class}}</td>
                   <td><DButton @icon="pencil" @action={{fn this.edit u}} class="btn-default" /></td>
@@ -310,42 +301,7 @@ export default class SchoolAdminForm extends Component {
               class="btn-default school-admin-more"
             />
           {{/if}}
-        {{else}}
-          <div class="school-admin-toolbar">
-            <DButton
-              @label="school_engine.admin_fix_displays"
-              @action={{this.fixDisplays}}
-              @isLoading={{this.fixing}}
-              class="btn-default"
-            />
-          </div>
-          <table class="school-admin-table">
-            <thead>
-              <tr>
-                <th>{{i18n "school_engine.admin_col_group"}}</th>
-                <th>{{i18n "school_engine.admin_col_display"}}</th>
-                <th>{{i18n "school_engine.admin_col_members"}}</th>
-                <th>{{i18n "school_engine.admin_col_category"}}</th>
-                <th>{{i18n "school_engine.admin_col_chat"}}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{#each this.classes as |c|}}
-                <tr>
-                  <td>{{c.group_name}}</td>
-                  <td>{{c.full_name}}</td>
-                  <td>{{c.user_count}}</td>
-                  <td>{{c.category_name}}</td>
-                  <td>
-                    {{#if c.chat}}
-                      ✓
-                    {{/if}}
-                  </td>
-                </tr>
-              {{/each}}
-            </tbody>
-          </table>
-        {{/if}}
+        </section>
       {{/if}}
     </div>
 

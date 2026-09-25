@@ -4,5 +4,4 @@ export default function () {
   this.route("school-profile", { path: "/school/profile" });
   this.route("school-directory", { path: "/school/directory" });
   this.route("school-manage", { path: "/school/manage" });
-  this.route("school-config", { path: "/school/config" });
 }

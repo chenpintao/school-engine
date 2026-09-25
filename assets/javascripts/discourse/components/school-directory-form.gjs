@@ -25,6 +25,16 @@ export default class SchoolDirectoryForm extends Component {
   @tracked error = null;
   @tracked users = [];
 
+  constructor() {
+    super(...arguments);
+    // 从 URL ?q= 恢复搜索词（返回上一页时），并自动重新搜索
+    const q = this.args.controller?.q;
+    if (q) {
+      this.query = q;
+      this.search();
+    }
+  }
+
   get isStaff() {
     return this.currentUser?.staff;
   }
@@ -46,8 +56,12 @@ export default class SchoolDirectoryForm extends Component {
     this.loading = true;
     this.error = null;
     this.searched = true;
-    const params = new URLSearchParams();
     const q = this.query.trim();
+    // 同步到 URL query param（浏览器后退/前进时可恢复）
+    if (this.args.controller) {
+      this.args.controller.q = q || "";
+    }
+    const params = new URLSearchParams();
     if (q) params.set("q", q);
     ajax("/school/directory.json?" + params.toString())
       .then((data) => {

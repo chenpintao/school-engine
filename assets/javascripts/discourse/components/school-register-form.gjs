@@ -254,6 +254,26 @@ export default class SchoolRegisterForm extends Component {
   }
 
   @action
+  onEnterKey(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.target.closest("form").requestSubmit();
+    }
+  }
+
+  @action
+  enterSubmit(event) {
+    event.preventDefault();
+    if (this.step === 2 || this.step === 3) {
+      this.next();
+    } else if (this.step === 4) {
+      this.submitRegister();
+    } else if (this.step === 5) {
+      this.submitRealName();
+    }
+  }
+
+  @action
   goProfile() {
     // 整页跳转：让 Ember 重新引导并识别 register 阶段下发的登录会话，
     // 落到 DC 原生个人资料页（插件的资料/改密码嵌入都挂在该页）。
@@ -287,6 +307,7 @@ export default class SchoolRegisterForm extends Component {
           <DButton @label="school_engine.later" @action={{this.goHome}} />
         </div>
       {{else}}
+        <form {{on "submit" this.enterSubmit}} {{on "keydown" this.onEnterKey}} class="school-register-form">
         {{! 步骤条 }}
         <div class="school-steps">
           {{#each this.steps as |s index|}}
@@ -410,6 +431,7 @@ export default class SchoolRegisterForm extends Component {
             <DButton @label="school_engine.prev" @action={{this.prev}} class="school-prev-btn" />
           {{/if}}
         {{/if}}
+        </form>
       {{/if}}
     </div>
   </template>

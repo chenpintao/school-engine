@@ -10,43 +10,35 @@ export default {
     withPluginApi("1.13.0", (api) => {
         const currentUser = api.getCurrentUser();
 
+        // 登录/注册：路由进入前客户端替换（同 SPA 内 transitionTo，无整页二次跳转）
+        const router = api.container.lookup("service:router");
+        router.on("routeWillChange", (transition) => {
+          const name = transition.to?.name;
+          if (name === "login") { transition.abort(); router.transitionTo("school-login"); }
+          else if (name === "signup") { transition.abort(); router.transitionTo("school-register"); }
+        });
+
         // 侧边栏链接工厂：所有链接同构（name/text/title + icon 前缀 + route 或 href）
+        // 注意：必须用类字段，不能用 getter——核心 BaseLink 构造函数会以 own
+        // property 写入同名字段，遮蔽子类 prototype getter（表现为空白 # 链接）。
         const buildLink = (BaseLink, def) =>
           class extends BaseLink {
-            get name() {
-              return def.name;
-            }
-            get text() {
-              return def.text;
-            }
-            get title() {
-              return def.text;
-            }
-            get route() {
-              return def.route;
-            }
-            get href() {
-              return def.href;
-            }
-            get prefixType() {
-              return "icon";
-            }
-            get prefixValue() {
-              return def.icon;
-            }
+            name = def.name;
+            text = def.text;
+            title = def.text;
+            route = def.route;
+            href = def.href;
+            prefixType = "icon";
+            prefixValue = def.icon;
           };
 
-        // 同学录/班级圈/班级管理：左侧菜单（必须传 panelKey "main"，否则 section 被静默丢弃）
+        // 同学录/班级管理：左侧菜单（必须传 panelKey "main"，否则 section 被静默丢弃）
         api.addSidebarSection(
           (BaseSection, BaseLink) => {
             const linkDefs = [
               { name: "school-directory", text: "同学录", route: "school-directory", icon: "address-book" },
-              { name: "school-classes", text: "班级圈", route: "groups", icon: "user-group" },
               { name: "school-manage", text: "班级管理", route: "school-manage", icon: "users" },
             ];
-            if (currentUser?.staff) {
-              linkDefs.push({ name: "school-config", text: "插件配置", route: "school-config", icon: "gear" });
-            }
             if (currentUser) {
               linkDefs.push({
                 name: "school-me",
@@ -69,17 +61,19 @@ export default {
                 return "校园";
               }
               get links() {
-                return linkDefs.map((def) => buildLink(BaseLink, def));
-              }
+              // 核心按实例读取属性（link.text / link.href …），必须 new，
+              // 返回类会得到空白 # 链接。
+              return linkDefs.map((def) => new (buildLink(BaseLink, def))());
+            }
             };
           },
           "main"
         );
 
-      // 班级管理：admin 管理菜单入口
+      // 班级管理：admin 管理菜单入口（直接进管理页，不再注册独立 admin 路由）
       api.addAdminSidebarSectionLink("root", {
         name: "school-classes",
-        route: "admin.schoolClasses",
+        href: "/school/manage",
         label: "school_engine.admin_menu_label",
         description: "school_engine.admin_menu_description",
         icon: "users",
@@ -231,14 +225,6 @@ export default {
                   ?.style.setProperty("display", "none", "important");
               });
           });
-        }
-        if (p === "/login" || p === "/login/") {
-          window.location.replace("/school/login");
-          return;
-        }
-        if (p === "/signup" || p === "/signup/") {
-          window.location.replace("/school/register");
-          return;
         }
         // 个人设置保留原生框架：profile 内容由插件注入（user-preferences-profile outlet）
 

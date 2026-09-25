@@ -9,28 +9,37 @@ school_engine:
   # 细分管理授权：该组成员可使用校园管理 API（与 staff 等效，不需要 admin 后台权限）
   school_engine_class_admin_group:
     default: ""
-  # 分类匿名规则 JSON（由 /school/config 配置页表单维护，勿手工编辑；留空走内置默认）
-  # [{"slug":"confess","mode":"optional"},{"slug":"anonymous-wall","mode":"forced"}]
-  # mode: forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名）/ disabled 禁止
+  # 分类匿名规则（原生设置列表，每行一条：分类slug:模式）
+  # 模式：forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名）/ disabled 禁止
+  # 例：confess:optional
+  # 留空使用内置默认（confess:optional、anonymous-wall:forced）
   school_engine_category_rules:
     default: ""
+    type: list
+    list_type: simple
     client: true
-  # ---- 功能开关（可在配置页表单切换）----
+  # ---- 功能开关 ----
   school_engine_feature_enabled:
     default: true
+    client: true
   school_engine_capsule_enabled:
     default: true
+    client: true
   school_engine_mood_enabled:
     default: true
+    client: true
   school_engine_tags_enabled:
     default: true
+    client: true
   # ---- 数值 / 日期参数 ----
   # 每日精选上限（自然日）
   school_engine_featured_per_day:
     default: 3
+    min: 1
   # 进入时光胶囊的点赞数阈值
   school_engine_capsule_like_threshold:
     default: 10
+    min: 1
   # 学期末月-日（两学期，scheduled job 匹配当天生成胶囊报告）
   school_engine_semester_end_1:
     default: "1-31"

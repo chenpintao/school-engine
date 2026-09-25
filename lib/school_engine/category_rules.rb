@@ -1,15 +1,16 @@
 # frozen_string_literal: true
 
 module SchoolEngine
-  # 分类级匿名规则（后台配置页表单维护，不再硬编码"表达空间/匿名墙" slug）。
+  # 分类级匿名规则（Discourse 原生站点设置维护，无自定义配置页）。
   #
-  # 存储：SiteSetting.school_engine_category_rules，JSON 数组
-  #   [{"slug":"confess","mode":"optional"},{"slug":"anonymous-wall","mode":"forced"}]
+  # 存储：SiteSetting.school_engine_category_rules（list 型，每行 "slug:mode"）
+  #   confess:optional
+  #   anonymous-wall:forced
   # mode：
   #   forced   强制：主题 OP + 回帖全部匿名（原匿名墙行为）
   #   optional 可选：仅回帖可勾选昵称 / 匿名（原表达空间行为；精选/胶囊只作用于这类分类）
   #   disabled 禁止：该分类不允许匿名
-  # 设置为空（或解析失败）时使用 DEFAULT_RULES，保证升级后行为与旧硬编码完全一致。
+  # 设置为空时使用 DEFAULT_RULES，保证全新部署行为与旧硬编码完全一致。
   module CategoryRules
     MODES = %w[forced optional disabled].freeze
     SETTING = :school_engine_category_rules
@@ -19,26 +20,22 @@ module SchoolEngine
       { "slug" => "anonymous-wall", "mode" => "forced" },
     ].freeze
 
-    def self.raw_rules
-      return nil if SiteSetting.public_send(SETTING).to_s.strip.blank?
-
-      JSON.parse(SiteSetting.public_send(SETTING).to_s)
-    rescue JSON::ParserError
-      nil
+    def self.raw_lines
+      value = SiteSetting.public_send(SETTING)
+      lines = value.is_a?(Array) ? value : value.to_s.split("\n")
+      lines.map { |l| l.to_s.strip }.reject(&:blank?)
     end
 
     # 有效规则数组（slug 非空、mode 合法；同 slug 后者覆盖前者）
     def self.rules
-      parsed = raw_rules
-      return DEFAULT_RULES.map(&:dup) if parsed.nil?
-      return [] unless parsed.is_a?(Array)
+      lines = raw_lines
+      return DEFAULT_RULES.map(&:dup) if lines.empty?
 
       result = {}
-      parsed.each do |row|
-        next unless row.is_a?(Hash)
-
-        slug = row["slug"].to_s.strip
-        mode = row["mode"].to_s
+      lines.each do |line|
+        slug, mode = line.split(":", 2)
+        slug = slug.to_s.strip
+        mode = mode.to_s.strip
         next if slug.blank? || MODES.exclude?(mode)
 
         result[slug] = mode
@@ -77,29 +74,6 @@ module SchoolEngine
       return [] if slugs.empty?
 
       ::Category.where(slug: slugs).to_a
-    end
-
-    # 由配置页提交的行清洗后落库；返回清洗结果（供回显）。
-    # 兼容三种入参：JSON 数组 / urlencoded 产生的 {"0"=>{...}} 哈希 / ActionController::Parameters
-    def self.update!(rows)
-      rows = rows.to_unsafe_h if rows.respond_to?(:to_unsafe_h)
-      rows = rows.values if rows.is_a?(Hash)
-
-      cleaned = []
-      seen = Set.new
-      Array(rows).each do |row|
-        row = row.to_unsafe_h if row.respond_to?(:to_unsafe_h)
-        next unless row.is_a?(Hash)
-
-        slug = row["slug"].to_s.strip
-        mode = row["mode"].to_s
-        next if slug.blank? || MODES.exclude?(mode) || seen.include?(slug)
-
-        seen << slug
-        cleaned << { "slug" => slug, "mode" => mode }
-      end
-      SiteSetting.public_send("#{SETTING}=", JSON.generate(cleaned))
-      cleaned
     end
   end
 end

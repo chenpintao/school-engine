@@ -17,6 +17,14 @@ const FALLBACK_RULES = [
   { slug: "anonymous-wall", mode: "forced" },
 ];
 
+const parseRuleLines = (lines) =>
+  (Array.isArray(lines) ? lines : String(lines || "").split("\n"))
+    .map((line) => {
+      const [slug, mode] = line.split(":");
+      return { slug: slug?.trim(), mode: mode?.trim() };
+    })
+    .filter((rule) => rule.slug && ["forced", "optional", "disabled"].includes(rule.mode));
+
 export default class SchoolFeatureButton extends Component {
   @service currentUser;
   @service site;
@@ -24,12 +32,8 @@ export default class SchoolFeatureButton extends Component {
   @tracked saving = false;
 
   get rules() {
-    try {
-      const parsed = JSON.parse(this.siteSettings.school_engine_category_rules || "[]");
-      return Array.isArray(parsed) && parsed.length ? parsed : FALLBACK_RULES;
-    } catch {
-      return FALLBACK_RULES;
-    }
+    const parsed = parseRuleLines(this.siteSettings.school_engine_category_rules);
+    return parsed.length ? parsed : FALLBACK_RULES;
   }
 
   get visible() {

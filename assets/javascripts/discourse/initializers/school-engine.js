@@ -3,6 +3,39 @@ import { ajax } from "discourse/lib/ajax";
 import { i18n } from "discourse-i18n";
 import SchoolJuniorClassModal from "discourse/plugins/school-engine/discourse/components/school-junior-class-modal";
 import SchoolFeatureButton from "discourse/plugins/school-engine/discourse/components/school-feature-button";
+import SchoolReportButton from "discourse/plugins/school-engine/discourse/components/school-report-button";
+
+
+// ---------------------------------------------------------------------------
+// 启动容错（全局，只执行一次）
+// 任何插件/主题的 initializer 抛错都会中断 Ember 启动，表现为页面永久停在
+// 加载动画（四个点）。这里对常见的"API 不存在"这类错误做兜底：
+// 捕获尚未处理的 promise 异常，避免其升级为启动失败。
+// 注意：只记录不吞掉真实错误，正常错误仍会打印到控制台便于排查。
+// ---------------------------------------------------------------------------
+if (typeof window !== "undefined" && !window.__schoolEngineBootGuard) {
+  window.__schoolEngineBootGuard = true;
+
+  const isApiDriftError = (err) => {
+    const msg = String(err?.message || err || "");
+    return (
+      msg.includes("is not a function") ||
+      msg.includes("Unknown transformer") ||
+      msg.includes("is unknown and will be ignored")
+    );
+  };
+
+  window.addEventListener("unhandledrejection", (event) => {
+    if (isApiDriftError(event.reason)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[school-engine] 已隔离插件 API 不兼容异常（不影响页面加载）:",
+        event.reason?.message || event.reason
+      );
+      event.preventDefault();
+    }
+  });
+}
 
 export default {
   name: "school-engine",
@@ -11,11 +44,23 @@ export default {
         const currentUser = api.getCurrentUser();
 
         // 登录/注册：路由进入前客户端替换（同 SPA 内 transitionTo，无整页二次跳转）
+        // 邀请链接进入原生 signup 时保留全部查询参数（invite_token 等），交给校园注册向导
         const router = api.container.lookup("service:router");
         router.on("routeWillChange", (transition) => {
           const name = transition.to?.name;
-          if (name === "login") { transition.abort(); router.transitionTo("school-login"); }
-          else if (name === "signup") { transition.abort(); router.transitionTo("school-register"); }
+          // "discovery.login-required" 是 login_required 站点的首页目标路由（核心无独立模板，
+          // 依赖原生 login 页兜底）。这里一并接管，否则匿名用户会停在空白页（四个点转圈）。
+          if (name === "login" || name === "discovery.login-required") {
+            transition.abort();
+            router.transitionTo("school-login");
+          }
+          else if (name === "signup") {
+            transition.abort();
+            // 透传邀请参数（核心 signup 的 queryParams 可能叫 inviteToken/invite_token），
+            // 用 URL 字符串跳转避免自定义路由未声明 queryParams 的兼容问题
+            const search = window.location.search || "";
+            router.transitionTo(`/school/register${search}`);
+          }
         });
 
         // 侧边栏链接工厂：所有链接同构（name/text/title + icon 前缀 + route 或 href）
@@ -38,6 +83,9 @@ export default {
             const linkDefs = [
               { name: "school-directory", text: "同学录", route: "school-directory", icon: "address-book" },
               { name: "school-manage", text: "班级管理", route: "school-manage", icon: "users" },
+              ...(currentUser && (currentUser.staff || currentUser.can_review_reports)
+                ? [{ name: "school-review", text: "审核复核台", route: "school-review", icon: "shield-alt" }]
+                : []),
             ];
             if (currentUser) {
               linkDefs.push({
@@ -91,6 +139,10 @@ export default {
       // 帖子菜单：staff 精选/取消精选（新版 glimmer post menu DAG；组件内部按分类+回帖条件自渲染）
       api.registerValueTransformer("post-menu-buttons", ({ value: dag, context }) => {
         dag.add("school-feature", SchoolFeatureButton, {
+          after: context.firstButtonKey,
+        });
+        // 固定一键举报入口（所有登录用户，帖子菜单常驻）
+        dag.add("school-report", SchoolReportButton, {
           after: context.firstButtonKey,
         });
       });
@@ -207,6 +259,17 @@ export default {
       api.onPageChange(() => {
         // 登录/注册入口统一指向自定义页面（覆盖 header 按钮、/login /signup 路由、直接访问）
         const p = window.location.pathname;
+
+        // 邀请链接（/invites/:token）：未登录用户直接进入校园注册向导，
+        // 让其完成学籍信息采集；已登录用户保留原生流程（直接接受邀请）
+        const inviteMatch = p.match(/^\/invites\/([A-Za-z0-9]+)/);
+        if (inviteMatch && !api.getCurrentUser()) {
+          const qs = new URLSearchParams(window.location.search);
+          const target = `/school/register?invite_token=${encodeURIComponent(inviteMatch[1])}`;
+          const extra = qs.toString();
+          window.location.replace(extra ? `${target}&${extra}` : target);
+          return;
+        }
 
         // 班级圈群组页：非 staff 隐藏成员入口与人数（服务端 members 接口已 404，这里仅视觉隐藏）
         const circleGroup = p.match(/^\/g\/((?:xx|cz)-\d{4}-)/);

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module SchoolEngine
-  # 精选机制：staff 每天从表达空间回帖中精选固定条数，展示于首页
+  # 精选机制：staff 每天从任意板块的帖子（含首楼）中精选固定条数，展示于首页
   # 精选同时写入时光胶囊标记；取消精选释放当日名额（不回滚胶囊）
   module Featured
     class QuotaExceeded < StandardError
@@ -14,10 +14,15 @@ module SchoolEngine
     CF_FEATURED_AT = "school_featured_at"
     CF_CAPSULE = "school_capsule"
 
-    # 仅表达空间分类下的回帖（post_number > 1）可被精选
+    # 任意板块普通话题下的帖子（含首楼 OP）都可被精选；
+    # 私信、非普通帖（whisper 等）除外
     def self.eligible?(post)
       return false if post.nil?
-      Expression.in_expression?(post) && post.post_number > 1
+      topic = post.topic
+      return false unless topic
+      return false if topic.private_message?
+      return false unless topic.archetype == Archetype.default
+      post.post_type == Post.types[:regular]
     end
 
     def self.featured?(post)

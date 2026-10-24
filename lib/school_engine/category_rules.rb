@@ -8,7 +8,7 @@ module SchoolEngine
   #   anonymous-wall:forced
   # mode：
   #   forced   强制：主题 OP + 回帖全部匿名（原匿名墙行为）
-  #   optional 可选：仅回帖可勾选昵称 / 匿名（原表达空间行为；精选/胶囊只作用于这类分类）
+  #   optional 可选：仅回帖可勾选昵称 / 匿名（原表达空间行为）
   #   disabled 禁止：该分类不允许匿名
   # 规则完全以站点设置为准（设置默认值见 config/settings.yml，后台可见可删改）；
   # 设置为空时不对任何板块生效。板块由管理员自行创建，插件不强制。

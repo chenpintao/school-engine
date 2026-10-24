@@ -31,6 +31,11 @@ module SchoolEngine
       render "school_engine_pages/spa", layout: "application"
     end
 
+    # GET /school/review（审核复核台页面壳）
+    def review
+      render "school_engine_pages/spa", layout: "application"
+    end
+
     # GET /school/manage（班级管理组与 staff 同一入口，页面壳；
     # 权限由 manage-status 判定，数据 API 在控制器层做 school_admin 校验）
     def manage

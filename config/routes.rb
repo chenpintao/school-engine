@@ -24,6 +24,8 @@ SchoolEngine::Engine.routes.draw do
   get "/school/junior-class-status" => "school_engine#junior_class_status"
   post "/school/select-junior-class" => "school_engine#select_junior_class"
 
+  # 注册页初始化数据：注册是否开放 + 邀请链接信息（匿名可访问）
+  get "/school/register-status" => "school_engine#register_status"
   post "/school/register" => "school_engine#register_user"
   post "/school/complete" => "school_engine#complete_registration"
   get "/school/profile" => "school_engine#profile",
@@ -48,4 +50,18 @@ SchoolEngine::Engine.routes.draw do
   post "/school/feature-post" => "school_engine#feature_post"
   post "/school/unfeature-post" => "school_engine#unfeature_post"
   post "/school/transfer-class" => "school_engine#transfer_class"
+
+  # ---- 举报 / 审核队列（主举报＋复核台＋申诉＋看板）----
+  get "/school/review" => "school_engine_pages#review", constraints: { format: /html/ }
+  get "/school/report-categories" => "reports#categories"
+  post "/school/report" => "reports#create"
+  get "/school/review" => "reports#queue", constraints: ->(req) { req.format.json? }
+  get "/school/review-detail" => "reports#detail"
+  post "/school/review-act" => "reports#act"
+  post "/school/review-reopen" => "reports#reopen"
+  get "/school/review-board" => "reports#board"
+  get "/school/review-export.csv" => "reports#export"
+  get "/school/appeals" => "reports#appeals"
+  post "/school/appeal" => "reports#appeal"
+  post "/school/resolve-appeal" => "reports#resolve_appeal"
 end

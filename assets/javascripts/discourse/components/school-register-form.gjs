@@ -25,6 +25,11 @@ export default class SchoolRegisterForm extends Component {
   // 注册成功后服务端返回的用户名（服务端已 log_on_user 下发会话 cookie）
   @tracked registeredUsername = "";
 
+  // ---- 注册开关 / 邀请链接（进入页面时拉取）----
+  @tracked statusLoading = true;
+  @tracked registrationsOpen = true;
+  @tracked invite = null; // {valid,email,inviter,groups,topic_title} | {valid:false} | null
+
   // 账号字段
   @tracked email = "";
   @tracked username = "";
@@ -42,6 +47,69 @@ export default class SchoolRegisterForm extends Component {
 
   // 实名
   @tracked realName = "";
+
+  constructor(owner, args) {
+    super(owner, args);
+    this.loadStatus();
+  }
+
+  // 兼容两种入口：/school/register?invite_token=xxx（邀请链接接管）
+  // 以及原生 signup 转发的 queryParams（inviteToken / invite_token）
+  get inviteToken() {
+    const fromQuery = new URLSearchParams(window.location.search).get("invite_token");
+    if (fromQuery) return fromQuery;
+    return (
+      this.args?.model?.invite_token ||
+      this.args?.inviteToken ||
+      new URLSearchParams(window.location.search).get("inviteToken") ||
+      ""
+    );
+  }
+
+  get validInvite() {
+    return this.invite?.valid === true;
+  }
+
+  get invalidInvite() {
+    return this.invite?.valid === false;
+  }
+
+  // 定向邮箱邀请：邮箱固定为邀请收件地址，不可改
+  get emailLocked() {
+    return this.validInvite && !!this.invite.email;
+  }
+
+  get inviteGroupsText() {
+    return (this.invite?.groups || []).join("、");
+  }
+
+  get canRegister() {
+    return this.registrationsOpen || this.validInvite;
+  }
+
+  loadStatus() {
+    const data = this.inviteToken ? { invite_token: this.inviteToken } : {};
+    ajax("/school/register-status.json", { data })
+      .then((res) => {
+        this.registrationsOpen = res.registrations_open !== false;
+        this.invite = res.invite || null;
+        if (this.validInvite && this.invite.email) {
+          this.email = this.invite.email;
+        }
+      })
+      .catch(() => {
+        // 状态接口异常时不阻断注册（后端提交时仍有闸口）
+        this.registrationsOpen = true;
+      })
+      .finally(() => {
+        this.statusLoading = false;
+      });
+  }
+
+  @action
+  goLogin() {
+    window.location.href = "/school/login";
+  }
 
   get minPasswordLength() {
     // 与后端 register_user 一致：SiteSetting.min_password_length
@@ -211,6 +279,9 @@ export default class SchoolRegisterForm extends Component {
       body.teacher_name = this.teacherName.trim();
       body.teacher_id_last4 = this.teacherId.trim();
     }
+    if (this.inviteToken) {
+      body.invite_token = this.inviteToken;
+    }
     ajax("/school/register.json", { type: "POST", data: body })
       .then((data) => {
         this.submitting = false;
@@ -294,7 +365,22 @@ export default class SchoolRegisterForm extends Component {
         <div class="school-auth-error">{{this.error}}</div>
       {{/if}}
 
-      {{#if (eq this.step 6)}}
+      {{#if this.statusLoading}}
+        <div class="school-register-state">
+          <span class="spinner"></span>
+          {{i18n "school_engine.register_state_loading"}}
+        </div>
+      {{else if (not this.canRegister)}}
+        <div class="school-register-paused">
+          <div class="school-register-paused-icon">🔒</div>
+          <h2>{{i18n "school_engine.register_paused_title"}}</h2>
+          <p>{{i18n "school_engine.register_paused_body"}}</p>
+          <div class="school-register-paused-actions">
+            <DButton @label="school_engine.register_paused_login" @type="primary" @action={{this.goLogin}} />
+            <DButton @label="school_engine.back_home" @action={{this.goHome}} />
+          </div>
+        </div>
+      {{else if (eq this.step 6)}}
         {{! 欢迎页 }}
         <div class="school-welcome">
           <h1>{{i18n "school_engine.welcome_title"}}</h1>
@@ -308,6 +394,26 @@ export default class SchoolRegisterForm extends Component {
         </div>
       {{else}}
         <form {{on "submit" this.enterSubmit}} {{on "keydown" this.onEnterKey}} class="school-register-form">
+        {{#if this.validInvite}}
+          <div class="school-invite-banner">
+            <span class="school-invite-banner-icon">✉️</span>
+            <div class="school-invite-banner-body">
+              <strong>{{i18n "school_engine.invite_banner_title"}}</strong>
+              {{#if this.invite.inviter}}
+                <p>{{i18n "school_engine.invite_from" name=this.invite.inviter}}</p>
+              {{/if}}
+              {{#if this.inviteGroupsText}}
+                <p>{{i18n "school_engine.invite_groups" groups=this.inviteGroupsText}}</p>
+              {{/if}}
+              {{#if this.invite.topic_title}}
+                <p>{{i18n "school_engine.invite_topic" title=this.invite.topic_title}}</p>
+              {{/if}}
+            </div>
+          </div>
+        {{/if}}
+        {{#if this.invalidInvite}}
+          <div class="school-invite-warning">{{i18n "school_engine.invite_invalid"}}</div>
+        {{/if}}
         {{! 步骤条 }}
         <div class="school-steps">
           {{#each this.steps as |s index|}}
@@ -340,8 +446,12 @@ export default class SchoolRegisterForm extends Component {
         {{#if (eq this.step 2)}}
           <div class="school-field">
             <label>{{i18n "school_engine.email"}}</label>
-            <Input @type="email" @value={{this.email}} placeholder="your@example.com" autocomplete="email" />
-            <p class="school-hint">{{i18n "school_engine.email_hint"}}</p>
+            <Input @type="email" @value={{this.email}} placeholder="your@example.com" autocomplete="email" disabled={{this.emailLocked}} />
+            {{#if this.emailLocked}}
+              <p class="school-hint">{{i18n "school_engine.invite_email_locked" email=this.email}}</p>
+            {{else}}
+              <p class="school-hint">{{i18n "school_engine.email_hint"}}</p>
+            {{/if}}
           </div>
           <div class="school-field">
             <label>{{i18n "school_engine.username"}}</label>

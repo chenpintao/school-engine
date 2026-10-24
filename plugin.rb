@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # name: school-engine
-# about: 校园社区学制引擎：年级计算、班级圈自动创建与权限、毕业标记、小升初选班、匿名表白墙、同学录
-# version: 0.2.0
+# about: 校园社区学制引擎：年级计算、班级圈自动创建与权限、毕业标记、小升初选班、匿名表白墙、同学录、AI 审核与举报复核
+# version: 0.3.0
 # authors: cpt110412
 # url: https://github.com/cpt110412/school-engine
 # required_version: 3.2.0
@@ -46,6 +46,10 @@ after_initialize do
   require_relative "lib/school_engine/class_notice"
   require_relative "lib/school_engine/visibility"
   require_relative "lib/school_engine/mood"
+  require_relative "lib/school_engine/report_categories"
+  require_relative "lib/school_engine/moderation"
+  require_relative "lib/school_engine/ai_review"
+  require_relative "lib/school_engine/login_redirect"
 
   # ---- 用户自定义字段注册（必须在 after_initialize 内）----
   # 学籍字段（字符串型）
@@ -56,6 +60,11 @@ after_initialize do
   ].each do |f|
     register_user_custom_field_type(f, :string)
   end
+
+  # 举报 / 申诉相关用户字段
+  %w[
+    report_filed_count report_abuse_count appeal_state appeal_post_id appeal_body appeal_at
+  ].each { |f| register_user_custom_field_type(f, :string) }
 
   # 计数 / 时间戳（整型）
   %w[anonymous_violations last_class_change].each do |f|
@@ -171,12 +180,43 @@ after_initialize do
       # 引用头掩码：引用匿名帖时清除 cooked 中的头像与真实姓名（跳过回调直接落库）
       masked_cooked = SchoolEngine::Anonymous.mask_quote_headers(post)
       post.update_columns(cooked: masked_cooked) if masked_cooked
+
+      # AI 审核：仅入队（异步），不阻塞发帖
+      SchoolEngine::AiReview.enqueue!(post)
     rescue => e
       Rails.logger.warn("school-engine: 帖子可见性标记失败 post=#{post&.id}: #{e.message}")
     end
   end
 
   # 点赞达阈值：非匿名帖自动入时光胶囊（幂等）
+  # 举报驱动的分类自动初判（核心举报入口已被前端隐藏路由到 /school/report）
+  on(:flag_created) do |post_action|
+    next unless SiteSetting.school_engine_moderation_enabled
+    begin
+      post = post_action&.post
+      next if post.nil?
+      category =
+        case post_action.post_action_type_id
+        when PostActionType.types[:inappropriate] then "bullying"
+        when PostActionType.types[:spam] then "spam"
+        when PostActionType.types[:illegal] then "illegal"
+        when PostActionType.types[:notify_moderator] then "anon_abuse"
+        else "anon_abuse"
+        end
+      next if SchoolEngine::Moderation.reporter_ids(post).include?(post_action.user_id)
+      SchoolEngine::Moderation.record_report!(
+        post,
+        reporter: post_action.user,
+        category: category,
+        reason: post_action.message.to_s,
+        anonymous: false,
+      )
+      SchoolEngine::Moderation.auto_triage!(post)
+    rescue => e
+      Rails.logger.warn("school-engine: 举报同步失败: #{e.message}")
+    end
+  end
+
   on(:post_liked) do |post, _post_action|
     next unless SiteSetting.school_engine_enabled
     begin
@@ -184,6 +224,39 @@ after_initialize do
     rescue => e
       Rails.logger.warn("school-engine: 时光胶囊点赞归档失败 post=#{post&.id}: #{e.message}")
     end
+  end
+
+  # 举报/审核：帖子序列化暴露当前用户可见状态（折叠/申诉按钮等），不泄露审核内部信息
+  add_to_serializer(:post, :school_mod_state, include_condition: -> { SiteSetting.school_engine_moderation_enabled }) do
+    post = object
+    state = post.custom_fields["mod_state"].presence || "normal"
+    viewer = scope&.user
+    visible_state =
+      if viewer&.staff?
+        state
+      elsif viewer && post.user_id == viewer.id
+        state
+      else
+        %w[folded].include?(state) ? "folded" : "normal"
+      end
+    visible_state
+  end
+
+  add_to_serializer(:post, :school_can_appeal, include_condition: -> { SiteSetting.school_engine_moderation_enabled && scope&.user }) do
+    viewer = scope.user
+    object.user_id == viewer.id && %w[pending hidden removed folded].include?(object.custom_fields["mod_state"].to_s)
+  end
+
+  # ---- 匿名访问根路径的登录兜底 ----
+  # login_required 站点上，核心把匿名 / 直接渲染成空白应用页，再靠前端
+  # discovery.login-required 路由跳转。该路由渲染的是静态页 model，一旦前端
+  # 任何环节出错就会停在空白页（用户看到"四个点一直转"）。
+  # 这里在服务端直接 302 到校园登录页，彻底绕开前端路由依赖。
+  # 匿名根路径的服务端登录兜底：接管 HomePageController#blank
+  # （核心在 login_required 时把匿名首页强制解析为 "blank" 空白页）
+  reloadable_patch do
+    ::HomePageController.prepend(SchoolEngine::LoginRedirect)
+    ::ApplicationController.prepend(SchoolEngine::CoreLoginEntryPoint)
   end
 
   # ---- 序列化补丁（prepend + super，热重载安全）----
@@ -245,6 +318,13 @@ after_initialize do
   end
 
   # 当前用户是否为教师（composer 开关 / 管理界面等前端权限判断用）
+  add_to_serializer(:current_user, :can_review_reports) do
+    next false unless SiteSetting.school_engine_moderation_enabled
+    u = object
+    gname = SiteSetting.school_engine_moderation_group.to_s.strip
+    u.staff? || (gname.present? && u.in_any_groups?(Group.where(name: gname).select(:id)))
+  end
+
   add_to_serializer(:current_user, :school_teacher) do
     SchoolEngine::Visibility.teacher?(object)
   end

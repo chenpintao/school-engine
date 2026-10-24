@@ -1,29 +1,32 @@
 zh_CN:
   site_settings:
     school_engine_enabled: "启用学制引擎（年级计算、班级圈、毕业标记、小升初）"
-    school_engine_teacher_group: "教师组名（班级圈中教师只读权限）"
-    school_engine_graduate_group: "毕业生组名（历史班级圈只读权限）"
+    school_engine_teacher_group: "教师组名（教职工身份组；默认不能进入任何学生班级圈，需要时把教师手动加入指定班级群组即可）"
+    school_engine_graduate_group: "毕业生组名（校友身份组；毕业生只能访问自己所在的班级圈，看不到其他班）"
     school_engine_class_admin_group: "班级管理组名（该组成员可使用校园管理 API，留空则仅管理员）"
-    school_engine_category_rules: "分类匿名规则列表，每行一条『分类slug:模式』；插件不会创建板块，请先自建板块再按 slug 绑定。模式：forced 强制匿名 / optional 回帖可选匿名（精选/胶囊作用于此）/ disabled 禁止。清空则全部关闭；班级圈板块恒不匿名"
+    school_engine_category_rules: "分类匿名规则列表，每行一条『分类slug:模式』；插件不会创建板块，请先自建板块再按 slug 绑定。模式：forced 强制匿名 / optional 回帖可选匿名 / disabled 禁止。清空则全部关闭；班级圈板块恒不匿名。精选功能不限板块，任意板块的回帖均可被精选"
     school_engine_feature_enabled: "启用每日精选功能"
     school_engine_capsule_enabled: "启用时光胶囊功能（精选/点赞自动封存与学期报告）"
     school_engine_mood_enabled: "启用每日心情签到与热力图"
     school_engine_tags_enabled: "启用表达空间固定标签种子（碎碎念等 5 个）"
     school_engine_featured_per_day: "每日精选上限（自然日，默认 3 条）"
+    school_engine_featured_topics: "首页精选区块展示的话题数量（1-6，默认 1，每个话题最多 3 条精选）"
     school_engine_capsule_like_threshold: "进入时光胶囊的点赞数阈值（默认 10 赞）"
     school_engine_semester_end_1: "第一学期末月-日（如 1-31 表示 1 月 31 日）"
     school_engine_semester_end_2: "第二学期末月-日（如 7-31 表示 7 月 31 日）"
   school_engine:
-    feature_already: "这条回帖已经精选过了"
-    feature_not_eligible: "只有可选匿名分类的回帖可以被精选"
+    register_paused: "当前已暂停新用户注册，请使用老师发来的邀请链接注册，或稍后再来。"
+    invite_email_mismatch: "这份邀请指定了邮箱，请使用邀请邮件中的邮箱地址注册"
+    feature_already: "这条帖子已经精选过了"
+    feature_not_eligible: "只有普通话题里的帖子可以被精选"
     feature_quota: "今天的精选名额已用完"
     feature_disabled: "精选功能当前已关闭"
     mood_disabled: "心情签到功能当前已关闭"
     err_mood_invalid: "心情取值无效，请选择 1-5"
     pm:
-      featured_title: "你的回答被精选了"
+      featured_title: "你的帖子被精选了"
       featured_body: |-
-        你那条关于“%{topic_title}”的回答被精选了，写得真好。
+        你那条关于“%{topic_title}”的帖子被精选了，写得真好。
 
         %{url}
       semester_title: "%{semester}时光胶囊"
@@ -38,3 +41,73 @@ zh_CN:
         愿这些真实的表达陪你走向下一段旅程。
 
         %{list}
+    report:
+      thanks: "已收到你的举报，我们会在 %{minutes} 分钟内处理并通知你结果。感谢你一起守护这个大院。"
+      appeal_received: "申诉已提交，会由另一位管理员复核，结果会私信通知你。"
+      appeal_pending: "你的申诉正在处理中，请耐心等待复核结果。"
+      appeal_already_uphold: "该帖的申诉已通过，内容已恢复，无需重复申诉。"
+      reopen_note: "复核后恢复显示"
+      conflict: "你与此帖的作者/班级存在利益冲突，请转交其他管理员或版主处理。"
+      categories:
+        illegal: "违法信息"
+        bullying: "欺凌 / 冷暴力"
+        privacy: "隐私泄露"
+        doxxing: "人肉搜索"
+        anon_abuse: "匿名滥用"
+        self_harm: "自伤风险"
+        spam: "广告灌水"
+        contact_harassment: "联系方式骚扰"
+      category_hints:
+        illegal: "违法、诈骗、代考作弊、危险品等"
+        bullying: "辱骂、威胁、集体冷暴力、孤立排挤"
+        privacy: "公开他人住址、成绩、家庭情况"
+        doxxing: "人肉、开盒、扒出真实身份"
+        anon_abuse: "借匿名身份中伤、造谣、骚扰"
+        self_harm: "表达自伤、轻生倾向，需紧急关心"
+        spam: "广告、刷屏、外链引流"
+        contact_harassment: "索要或散播手机号/微信/QQ 骚扰"
+      states:
+        normal: "正常"
+        folded: "已折叠"
+        pending: "待复核"
+        hidden: "限时隐藏"
+        removed: "已下架"
+        escalated: "已转人工"
+    mod:
+      auto_note: "AI 自动初判，待人工复核"
+    pm:
+      report_result_title: "你的举报已有结果"
+      report_result_body: |-
+        关于「%{topic_title}」的举报已处理完毕，当前状态：%{state}。
+
+        详情：%{url}
+        %{note}
+      moderation_result_title: "你的帖子收到处理通知"
+      moderation_result_body: |-
+        你在「%{topic_title}」中的内容被处理，当前状态：%{state}。
+
+        查看：%{url}
+        %{note}
+
+        如果你认为处理有误，可以在帖子页面发起申诉。
+      high_risk_report_title: "【高优先级】收到高风险举报"
+      high_risk_report_body: |-
+        举报分类：%{categories}
+        涉事主题：%{topic_title}
+
+        请尽快前往复核台：%{url}
+      appeal_uphold_title: "申诉成立"
+      appeal_uphold_body: |-
+        你对「%{topic_title}」的申诉已通过，内容已恢复。
+        %{note}
+      appeal_reject_title: "申诉处理结果"
+      appeal_reject_body: |-
+        你对「%{topic_title}」的申诉经复核未通过。
+        %{note}
+
+    school_engine_moderation_enabled: "启用举报与审核队列（含复核台、申诉、举报看板）"
+    school_engine_moderation_group: "复核组名（除 staff 外可处理举报队列的群组）"
+    school_engine_report_anonymous_note: "匿名举报：前台不显示举报人身份，后台保留完整留痕"
+    school_engine_ai_review_enabled: "启用 AI 自动关键词审核（异步队列，不阻塞发帖）"
+    school_engine_ai_keywords: "追加敏感词（每行一个，仅服务端可见，接口不会返回词条）"
+    school_engine_contact_leak_action: "联系方式泄露处置强度（提示 / 折叠 / 待复核）"

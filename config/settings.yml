@@ -11,9 +11,10 @@ school_engine:
     default: ""
   # 分类匿名规则（每行一条：分类slug:模式）。插件不创建任何板块，
   # 由管理员自建板块后在此绑定；清空即全部关闭（班级圈板块恒不匿名）。
-  # 模式：forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名，精选/胶囊作用于此）/ disabled 禁止
+  # 模式：forced 强制（OP+回帖全匿名）/ optional 可选（仅回帖可选匿名）/ disabled 禁止
   # 下面只是与默认板块模板对应的预设值，板块不存在时无任何效果，可任意修改或删除：
   #   confess:optional、anonymous-wall:forced
+  # 注意：精选功能不依赖该规则，任意板块的回帖都可被 staff 精选（班级圈板块仅强制不匿名）
   school_engine_category_rules:
     default: "confess:optional|anonymous-wall:forced"
     type: list
@@ -37,6 +38,11 @@ school_engine:
   school_engine_featured_per_day:
     default: 3
     min: 1
+  # 首页精选区块展示的话题数量（每个话题最多 3 条精选）
+  school_engine_featured_topics:
+    default: 1
+    min: 1
+    max: 6
   # 进入时光胶囊的点赞数阈值
   school_engine_capsule_like_threshold:
     default: 10
@@ -46,3 +52,29 @@ school_engine:
     default: "1-31"
   school_engine_semester_end_2:
     default: "7-31"
+  # ---- 审核 / 举报 ----
+  school_engine_moderation_enabled:
+    default: true
+    client: true
+  # 复核组成员（除 staff 外可处理举报队列；避嫌规则对非管理员生效）
+  school_engine_moderation_group:
+    default: "moderators"
+  # 举报人保护：前台不显示举报人身份，后台留痕
+  school_engine_report_anonymous_note:
+    default: true
+  # AI 自动关键词审核开关（异步队列，不影响发帖）
+  school_engine_ai_review_enabled:
+    default: true
+  # 追加敏感词（每行一个，仅服务端可见；接口永不返回词条）
+  school_engine_ai_keywords:
+    default: ""
+    type: string
+    secret: true
+  # 违规联系方式的处置强度：hint（提示）/ fold（折叠）/ hide（待复核）
+  school_engine_contact_leak_action:
+    default: "fold"
+    type: enum
+    choices:
+      - hint
+      - fold
+      - hide

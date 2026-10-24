@@ -8,40 +8,23 @@ import { popupAjaxError } from "discourse/lib/ajax-error";
 import { i18n } from "discourse-i18n";
 
 /**
- * staff 精选/取消精选回帖（post menu 按钮，新版 glimmer post menu DAG）。
- * 可见条件：精选功能开启 + staff + optional 可选匿名分类 + 回帖（post_number > 1）。
+ * staff 精选/取消精选帖子（post menu 按钮，新版 glimmer post menu DAG）。
+ * 可见条件：精选功能开启 + staff + 普通话题（含首楼 OP）。
+ * 任意板块均可精选，不限匿名表达板块；私信话题不显示。
  * 精选状态来自 PostSerializer 的 school_featured 字段。
  */
-const parseRuleLines = (lines) =>
-  // Discourse list 设置以 "|" 分隔存储；同时兼容换行（textarea 粘贴）
-  (Array.isArray(lines) ? lines : String(lines || "").split(/[|\n]/))
-    .map((line) => {
-      const [slug, mode] = line.split(":");
-      return { slug: slug?.trim(), mode: mode?.trim() };
-    })
-    .filter((rule) => rule.slug && ["forced", "optional", "disabled"].includes(rule.mode));
-
 export default class SchoolFeatureButton extends Component {
   @service currentUser;
-  @service site;
   @service siteSettings;
   @tracked saving = false;
-
-  get rules() {
-    // 规则完全来自站点设置；为空（清空设置）时不对任何板块生效
-    return parseRuleLines(this.siteSettings.school_engine_category_rules);
-  }
 
   get visible() {
     const post = this.args.post;
     if (!this.siteSettings.school_engine_feature_enabled) return false;
-    if (!this.currentUser?.staff || !post || post.post_number <= 1) {
+    if (!this.currentUser?.staff || !post) {
       return false;
     }
-    const categoryId = post.topic?.category_id;
-    const category = this.site.categories?.findBy?.("id", categoryId);
-    return !!category &&
-      this.rules.some((rule) => rule.slug === category.slug && rule.mode === "optional");
+    return post.topic?.archetype !== "private_message";
   }
 
   get featured() {

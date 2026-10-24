@@ -6,12 +6,12 @@ module SchoolEngine
     requires_plugin "school-engine"
     wrap_parameters false
 
-    # register_user/home/feed/moods 放行匿名（注册必须公开；首页卡片与心情历史供未登录浏览）
-    requires_login except: %i[register_user home feed moods featured_one]
+    # register_user/register_status/home/feed/moods 放行匿名（注册必须公开；首页卡片与心情历史供未登录浏览）
+    requires_login except: %i[register_user register_status home feed moods featured_one]
     # login_required=true 时未登录 JSON/XHR 会被全局拦截，这些接口同样需要放行重定向回调。
     # 注意：requires_login 自身注册的是 block_if_requires_login，已由上面的 except 排除，不要再 skip 不存在的回调。
     skip_before_action :redirect_to_login_if_required,
-                       only: %i[register_user home feed moods featured_one]
+                       only: %i[register_user register_status home feed moods featured_one]
 
     # staff 专属操作（联系方式导出）走 guardian；管理类 API 允许"班级管理组"细分授权
     before_action :ensure_staff, only: %i[directory_export feature_post unfeature_post]
@@ -39,10 +39,10 @@ module SchoolEngine
              }
     end
 
-    # GET /school/featured.json —— 首页精选区块：1 个精选话题 + 最多 3 条精选回帖
+    # GET /school/featured.json —— 首页精选区块：最多 N 个精选话题（后台可配，默认 1），每话题≤3 条精选
     def featured_one
-      return render json: { topic: nil } unless SiteSetting.school_engine_feature_enabled
-      render json: { topic: featured_topic_one }
+      return render json: { topics: [] } unless SiteSetting.school_engine_feature_enabled
+      render json: { topics: featured_topics }
     end
 
     # POST /school/mood-checkin.json —— 今日心情签到/改签（mood: 1-5）
@@ -91,10 +91,48 @@ module SchoolEngine
       render json: { errors: [e.message] }, status: :forbidden
     end
 
+    # GET /school/register-status.json?invite_token=xxx
+    # 注册页初始化数据：注册是否开放（allow_new_registrations）+ 邀请链接摘要。
+    # 暂停公开注册时，持有效邀请仍可注册（由 register_user 二次校验）。
+    def register_status
+      render json: {
+               registrations_open: SiteSetting.allow_new_registrations,
+               invite: invite_info(params[:invite_token].presence || params[:token].presence),
+             }
+    end
+
+    # 邀请摘要（供注册页横幅展示）；token 缺失/无效/过期均返回 nil 或 {valid:false}
+    def invite_info(token)
+      return nil if token.blank?
+      invite = Invite.find_by(invite_key: token.to_s)
+      return { valid: false } if invite.nil?
+      unless invite.redeemable?
+        return { valid: false, reason: invite.expired? ? "expired" : "unavailable" }
+      end
+
+      {
+        valid: true,
+        is_link: invite.is_invite_link?,
+        # 定向邮箱邀请：注册邮箱必须与邀请一致，前端据此预填并锁定
+        email: invite.is_invite_link? ? nil : invite.email,
+        inviter: invite.invited_by&.username,
+        groups: invite.groups.pluck(:name),
+        topic_title: invite.topics.first&.title,
+      }
+    end
+
     # POST /school/register.json —— 自定义注册向导（邮箱不验证、写学籍字段、自动入群）
     def register_user
       # 防刷：每 IP 每小时 10 次注册尝试（超限由全局 rescue_from 返回 429）
       RateLimiter.new(nil, "school-register:#{request.remote_ip}", 10, 1.hour).performed!
+
+      # 暂停公开注册时，仅持有效邀请链接可以注册
+      invite = Invite.find_by(invite_key: params[:invite_token].to_s.strip)
+      unless SiteSetting.allow_new_registrations || (invite && invite.redeemable?)
+        return(
+          render json: { errors: [I18n.t("school_engine.register_paused")] }, status: :forbidden
+        )
+      end
 
       identity = params[:identity].to_s
       raise Discourse::InvalidParameters.new(:identity) if %w[student teacher].exclude?(identity)
@@ -105,6 +143,14 @@ module SchoolEngine
       raise Discourse::InvalidParameters.new(:email) if email.blank?
       raise Discourse::InvalidParameters.new(:username) if username.blank?
       raise Discourse::InvalidParameters.new(:password) if password.length < SiteSetting.min_password_length
+
+      # 定向邮箱邀请：注册邮箱必须与邀请收件地址一致
+      if invite && !invite.is_invite_link? && Email.downcase(invite.email) != email
+        return(
+          render json: { errors: [I18n.t("school_engine.invite_email_mismatch")] },
+                 status: :unprocessable_entity
+        )
+      end
 
       real_name = params[:real_name].to_s.strip
       fields = { "identity" => identity }
@@ -147,7 +193,23 @@ module SchoolEngine
       # 注册即登录
       log_on_user(user)
 
-      render json: { success: true, username: user.username }
+      # 兑换邀请：加入邀请指定群组 / 话题通知等（InviteRedeemer 的已登录用户路径）。
+      # 用户已创建，兑换失败不回滚注册，仅记录并在响应中提示。
+      invite_redeemed = false
+      if invite
+        begin
+          if invite.redeemable?
+            InviteRedeemer.new(invite: invite, redeeming_user: user).redeem
+            invite_redeemed = true
+          end
+        rescue StandardError => e
+          Rails.logger.warn(
+            "school-engine: 邀请兑换失败 invite=#{invite.invite_key} user=#{user.id}: #{e.class}: #{e.message}",
+          )
+        end
+      end
+
+      render json: { success: true, username: user.username, invite_redeemed: invite_redeemed }
     rescue ActiveRecord::RecordInvalid => e
       render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
     rescue Discourse::InvalidParameters => e
@@ -389,6 +451,27 @@ module SchoolEngine
         .where("topics.id NOT IN (#{home_hidden_from_staff_sql})")
     end
 
+    # 精选可来自任意板块：首页/Feed 只展示当前访客有权阅读的分类下的精选，
+    # 避免班级圈等私密板块内容经精选区块泄露（匿名访客只看公开板块）
+    def featured_topic_scope
+      scope =
+        Topic
+          .where(deleted_at: nil, archived: false, visible: true)
+          .where(archetype: Archetype.default)
+          .where("topics.id NOT IN (#{home_hidden_from_staff_sql})")
+
+      if current_user
+        allowed = Guardian.new(current_user).allowed_category_ids
+        # staff 的 allowed_category_ids 为 nil，表示全部板块可见
+        scope = scope.where("category_id IS NULL OR category_id IN (?)", allowed) if allowed
+      else
+        public_ids = Category.where(read_restricted: false).pluck(:id)
+        scope = scope.where("category_id IS NULL OR category_id IN (?)", public_ids)
+      end
+
+      scope
+    end
+
     # 今日话题：topic cf daily_topic=今日（预留）→ 表达空间 staff 创建的最新主题
     def daily_topic
       topic =
@@ -426,9 +509,8 @@ module SchoolEngine
           .joins(
             "JOIN post_custom_fields school_pcf_at ON school_pcf_at.post_id = posts.id AND school_pcf_at.name = 'school_featured_at'",
           )
-          .where(topic_id: expression_topics.select(:id))
+          .where(topic_id: featured_topic_scope.select(:id))
           .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
-          .where("posts.post_number > 1")
 
       posts =
         base.where("school_pcf_at.value >= ? AND school_pcf_at.value < ?", start_iso, finish_iso)
@@ -461,8 +543,6 @@ module SchoolEngine
 
     # 精选按话题分组：取最近 9 条精选回帖，同话题归并，每组最多展示 3 条
     def featured_groups
-      return [] if expression_category_ids.empty?
-
       posts =
         Post
           .joins(:topic)
@@ -472,9 +552,8 @@ module SchoolEngine
           .joins(
             "JOIN post_custom_fields school_feed_at ON school_feed_at.post_id = posts.id AND school_feed_at.name = 'school_featured_at'",
           )
-          .where(topic_id: expression_topics.select(:id))
+          .where(topic_id: featured_topic_scope.select(:id))
           .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
-          .where("posts.post_number > 1")
           .order("school_feed_at.value DESC")
           .limit(9)
           .to_a
@@ -498,10 +577,11 @@ module SchoolEngine
       }
     end
 
-    # 首页精选区块：优先取当天精选回帖（数量同每日配额，上限 3），
-    # 选出其中精选条数最多的话题；该话题不足 3 条时用同话题其他精选补齐。
-    # 当天没有精选则回退最近一批，任何精选都没有时返回 nil。
-    def featured_topic_one
+    # 首页精选区块：展示话题数可配（school_engine_featured_topics，默认 1，每个话题最多 3 条精选）。
+    # 优先当天精选；话题数不足时并入最近精选补足；话题按精选条数从多到少排列。
+    # 任何精选都没有时返回 []。
+    def featured_topics
+      count = [SiteSetting.school_engine_featured_topics.to_i, 1].max
       base =
         Post
           .joins(:topic)
@@ -513,35 +593,35 @@ module SchoolEngine
             "JOIN post_custom_fields school_one_at ON school_one_at.post_id = posts.id " \
               "AND school_one_at.name = 'school_featured_at'"
           )
-          .where(topic_id: expression_topics.select(:id))
+          .where(topic_id: featured_topic_scope.select(:id))
           .where(hidden: false, deleted_at: nil, post_type: Post.types[:regular])
-          .where("posts.post_number > 1")
 
       now = Time.zone.now
-      posts =
+      pool =
         base
           .where("school_one_at.value >= ? AND school_one_at.value < ?",
                  now.beginning_of_day.utc.iso8601, now.end_of_day.utc.iso8601)
           .order("school_one_at.value DESC")
-          .limit([SiteSetting.school_engine_featured_per_day.to_i, 3].min)
           .to_a
-      posts = base.order("school_one_at.value DESC").limit(3).to_a if posts.empty?
-      return nil if posts.empty?
-
-      topic_id = posts.group_by(&:topic_id).max_by { |_, list| list.length }.first
-      replies = posts.select { |post| post.topic_id == topic_id }
-      if replies.length < 3
-        replies +=
-          base
-            .where(topic_id: topic_id)
-            .where.not(id: replies.map(&:id))
-            .order("school_one_at.value DESC")
-            .limit(3 - replies.length)
-            .to_a
+      if pool.map(&:topic_id).uniq.size < count
+        pool += base.order("school_one_at.value DESC").limit(count * 10).to_a
       end
+      pool = pool.uniq(&:id)
+      return [] if pool.empty?
 
-      topic = replies.first.topic
-      { title: topic&.title, url: topic&.relative_url, replies: replies.map { |p| feed_reply(p) } }
+      pool
+        .group_by(&:topic_id)
+        .sort_by { |_, list| [-list.length, -list.map(&:id).max] }
+        .first(count)
+        .map do |topic_id, list|
+          topic = list.first.topic
+          {
+            topic_id: topic_id,
+            title: topic&.title,
+            url: topic&.relative_url,
+            replies: list.first(3).map { |p| feed_reply(p) },
+          }
+        end
     end
 
     # 最新帖（按 bumped_at）；只取当前用户可读分类，精选话题由前端剔除
@@ -604,7 +684,7 @@ module SchoolEngine
 
     public
 
-    # POST /school/feature-post.json —— staff 精选表达空间回帖（每日上限 + 系统私信 + 入时光胶囊）
+    # POST /school/feature-post.json —— staff 精选任意板块帖子（含首楼，每日上限 + 系统私信 + 入时光胶囊）
     def feature_post
       unless SiteSetting.school_engine_feature_enabled
         return(

@@ -14,7 +14,7 @@ module SchoolEngine
     # advisory lock 一级 key（"SENG" 缩写派生的固定 int，避免与其它插件冲突）
     ADVISORY_LOCK_KEY = 0x53454e47
 
-    # ---- optional 可选匿名分类（精选 / 时光胶囊只作用于这类分类）----
+    # ---- optional 可选匿名分类 ----
 
     def self.categories
       CategoryRules.categories_with_mode("optional")

@@ -4,8 +4,9 @@ module SchoolEngine
   # 可见性控制（"学生发帖可选择不给老师看"）
   #
   # 权限模型：
-  #  - 教师组（SiteSetting.school_engine_teacher_group）：可读所有正常帖；
-  #    但学生标记 hide_from_staff 的主题对教师 404（列表同样过滤）
+  #  - 班级圈板块访问：只认本班群组成员身份（+ staff）；教师组/毕业生组无全局授权，
+  #    教师仅在被手动加入某班级群组时可见该圈，毕业生只可见自己的班级圈
+  #  - 教师可见的板块内：学生标记 hide_from_staff 的主题仍对教师 404（列表同样过滤）
   #  - 管理员（Discourse staff）：无视一切限制（可溯源、可管理）
   #  - 班级管理组（SiteSetting.school_engine_class_admin_group）：
   #    可使用校园管理 API（非 staff 的细分授权）

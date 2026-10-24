@@ -75,7 +75,7 @@ module SchoolEngine
       # 确保班级圈有对应 Chat 频道（新建/补建）
       ensure_chat_channel_for(category) if category
 
-      # 毕业生 / 离校 → 毕业生组：全部班级圈板块 full（可读可发帖，非只读）
+      # 毕业生 / 离校 → 加入毕业生组（仅校友身份标识；班级圈访问权只来自上面加入的自己班级组）
       grad_joined = false
       if %w[毕业生 离校].include?(fields["status"]) && (g = graduate_group)
         unless GroupUser.exists?(group_id: g.id, user_id: user.id)
@@ -87,21 +87,42 @@ module SchoolEngine
       { joined: joined, grad_joined: grad_joined, group: group, category: category }
     end
 
-    # 板块权限自愈（幂等）：本班群组 full、staff full、教师 readonly、毕业生 full。
-    # 行已存在且权限正确时不写库；其余自定义授权组合并保留。
+    # 板块权限自愈（幂等）：本班群组 full、staff full。
+    # 教师组 / 毕业生组不再获得任何班级圈的全局授权——
+    # 教师只通过被手动加入某个班级群组获得该圈访问权；毕业生只保留自己班级组的成员身份。
+    # 其余管理员手工添加的授权组合并保留；权限行发生变化时同步 Chat 频道成员。
     def self.ensure_category_permissions(cat, class_group)
       return if cat.nil? || class_group.nil?
       full = CategoryGroup.permission_types[:full]
-      readonly = CategoryGroup.permission_types[:readonly]
       desired = { class_group.id => full, Group[:staff].id => full }
-      desired[teacher_group.id] = readonly if teacher_group
-      desired[graduate_group.id] = full if graduate_group
+      global_group_ids = [teacher_group&.id, graduate_group&.id].compact
 
       existing = CategoryGroup.where(category_id: cat.id).pluck(:group_id, :permission_type).to_h
-      return if desired.all? { |gid, type| existing[gid] == type }
+      final = existing.except(*global_group_ids).merge(desired)
+      return if final == existing
 
-      cat.set_permissions(existing.merge(desired))
+      cat.set_permissions(final)
       cat.save!
+      align_chat_channel_membership(cat)
+    end
+
+    # 板块授权变化后，把无权再访问该板块的用户从对应 Chat 频道取消关注
+    #（Discourse 频道成员只随自动加入增长，授权收回不会自动退频道）
+    def self.align_chat_channel_membership(cat)
+      return unless defined?(::Chat::UserChatChannelMembership)
+      channel = Chat::Channel.find_by(chatable: cat, chatable_type: "Category")
+      return unless channel
+
+      allowed = User.staff.pluck(:id)
+      Group.where(id: CategoryGroup.where(category_id: cat.id).select(:group_id)).find_each do |g|
+        allowed.concat(g.users.pluck(:id))
+      end
+      allowed.uniq!
+
+      Chat::UserChatChannelMembership
+        .where(chat_channel_id: channel.id, following: true)
+        .where.not(user_id: allowed)
+        .update_all(following: false)
     end
 
     # 班级圈前缀：小学阶段(diff>=4)或初一未选班(diff==3 且无 junior_class) => xx；其余 => cz
@@ -130,16 +151,11 @@ module SchoolEngine
         color: "0088CC",
         user: Discourse.system_user,
       )
+      # 仅本班组与 staff 可访问：教师/毕业生不通过全局组获得班级圈授权
       perms = {
         group => CategoryGroup.permission_types[:full],
         Group[:staff] => CategoryGroup.permission_types[:full],
       }
-      if (t = teacher_group)
-        perms[t] = CategoryGroup.permission_types[:readonly]
-      end
-      if (g = graduate_group)
-        perms[g] = CategoryGroup.permission_types[:full] # 毕业生可读写（chat/发帖）
-      end
       cat.set_permissions(perms)
       cat.save!
       # 班级管理员：本班 Group 作为该分类的 moderation group（本班成员可审核本班内容）
@@ -178,14 +194,14 @@ module SchoolEngine
     end
 
     # "我已离校"（小升初弹窗选项）：小学毕业考去外校初中
-    # 状态改"离校"并加入毕业生组（历史班级圈可读可发帖），小学班级圈届数固定为中考年-3
+    # 状态改"离校"并加入毕业生组（校友身份；自己班级圈访问来自其班级组成员身份），小学班级圈届数固定为中考年-3
     def self.mark_left_school!(user, now: Date.current)
       return false if user.custom_fields["status"].to_s != "在读"
 
       user.custom_fields["status"] = "离校"
       user.save_custom_fields(true)
 
-      # 加入毕业生组（以毕业生身份访问班级圈板块：full 权限，可读可发帖）
+      # 加入毕业生组（校友身份标识，不授予其他班级圈权限）
       g = Group.find_by(name: graduate_group)
       if g && !GroupUser.exists?(group_id: g.id, user_id: user.id)
         GroupUser.find_or_create_by!(group: g, user: user)
@@ -230,7 +246,7 @@ module SchoolEngine
       User.where(id: gy_ids & reading_ids).find_each do |user|
         user.custom_fields["status"] = "毕业生"
         user.save_custom_fields(true)
-        # 加入毕业生组：班级圈板块保留 full 权限（毕业后可读可发帖，非只读）
+        # 加入毕业生组（校友身份标识；班级圈访问权保留在自己班级组，可读可发帖，非只读）
         if (g = graduate_group)
           GroupUser.find_or_create_by!(group: g, user: user) unless GroupUser.exists?(group_id: g.id, user_id: user.id)
         end
@@ -315,22 +331,21 @@ module SchoolEngine
       end
     end
 
-    # 历史数据修复：班级圈内移除教师成员（教师不进学生群组）+ 毕业生权限改读写
+    # 历史数据修复（权限隔离，可反复执行）：
+    # - 每个班级圈板块仅保留"本班组 full + staff full"，收回教师组/毕业生组的全局授权
+    #   （教师如需查看某个班，由管理员手动将其加入该班级群组；毕业生只保留自己班级组）
+    # - 移除教师在学生班群中的成员身份（教师有自己的群组，不占学生班名额）
+    # - Chat 频道成员跟随板块授权对齐（由 ensure_category_permissions 内触发）
     def self.fix_circle_permissions!
       t = teacher_group
-      g = graduate_group
-      full = CategoryGroup.permission_types[:full]
-      Group.where("name LIKE 'xx-%' OR name LIKE 'cz-%'").find_each do |grp|
-        # 移除教师成员（教师有自己的群组，不进学生班级圈）
+      Category.where("slug LIKE 'xx-class-%' OR slug LIKE 'cz-class-%'").find_each do |cat|
+        grp = Group.find_by(name: cat.slug.sub(/\A(xx|cz)-class-/, '\1-'))
+        next unless grp
+        # 移除教师成员
         if t
           t.user_ids.each { |uid| GroupUser.where(group: grp, user_id: uid).delete_all }
         end
-        # 毕业生：分类权限 full（可发帖/chat）
-        if g
-          cat = Category.find_by(slug: grp.name.sub(/\A(cz|xx)-/, '\1-class-'))
-          cg = CategoryGroup.find_by(category: cat, group: g) if cat
-          cg&.update!(permission_type: full)
-        end
+        ensure_category_permissions(cat, grp)
       end
     end
 

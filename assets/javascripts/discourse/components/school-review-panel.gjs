@@ -4,16 +4,26 @@ import { action } from "@ember/object";
 import { service } from "@ember/service";
 import { on } from "@ember/modifier";
 import { fn } from "@ember/helper";
-import { eq } from "discourse/truth-helpers";
+import { eq, not } from "discourse/truth-helpers";
 import { ajax } from "discourse/lib/ajax";
 import { popupAjaxError } from "discourse/lib/ajax-error";
 import DButton from "discourse/ui-kit/d-button";
+import DModal from "discourse/ui-kit/d-modal";
+import DEmptyState from "discourse/ui-kit/d-empty-state";
+import DConditionalLoadingSpinner from "discourse/ui-kit/d-conditional-loading-spinner";
+import DExpandingTextArea from "discourse/ui-kit/d-expanding-text-area";
 import { i18n } from "discourse-i18n";
 
 /**
  * 审核复核台（/school/review，staff 与复核组共用）。
- * 一个页面三块：举报队列（含 AI 标记与 SLA）、举报看板、申诉处理。
- * 版主利益冲突（本班/本人）时后端返回 conflict，前端提供"转交"按钮。
+ *
+ * 深度复用 Discourse 官方组件，保持与核心一致的视觉与交互：
+ *  - d-stat-tiles 官方样式类（看板统计）
+ *  - DEmptyState  空状态
+ *  - DConditionalLoadingSpinner  加载态
+ *  - DButton / DModal / DExpandingTextArea / DTooltip
+ *
+ * 一次请求只拉队列，看板与申诉按需加载，减少首屏等待。
  */
 export default class SchoolReviewPanel extends Component {
   @service currentUser;
@@ -43,6 +53,7 @@ export default class SchoolReviewPanel extends Component {
         this.items = res.items || [];
         this.total = res.total || 0;
         this.loading = false;
+        // 看板与申诉延后加载，不阻塞队列首屏
         this.loadBoard();
         this.loadAppeals();
       })
@@ -56,7 +67,7 @@ export default class SchoolReviewPanel extends Component {
   loadBoard() {
     ajax("/school/review-board.json", { data: { days: 30 } })
       .then((res) => (this.board = res))
-      .catch(popupAjaxError);
+      .catch(() => null);
   }
 
   @action
@@ -73,6 +84,9 @@ export default class SchoolReviewPanel extends Component {
 
   @action
   setFilter(value) {
+    if (this.filter === value) {
+      return;
+    }
     this.filter = value;
     this.init();
   }
@@ -136,10 +150,26 @@ export default class SchoolReviewPanel extends Component {
     return "/school/review-export.csv";
   }
 
+  get isEmpty() {
+    return !this.loading && this.allowed && this.items.length === 0;
+  }
+
+  get stateLabel() {
+    const map = {
+      pending: i18n("school_engine.review.state_pending"),
+      escalated: i18n("school_engine.review.state_escalated"),
+      folded: i18n("school_engine.review.state_folded"),
+      hidden: i18n("school_engine.review.state_hidden"),
+      removed: i18n("school_engine.review.state_removed"),
+      normal: i18n("school_engine.review.state_normal"),
+    };
+    return (state) => map[state] || state;
+  }
+
   <template>
     <div class="school-review">
       {{#if this.loading}}
-        <p class="school-review-loading">{{i18n "school_engine.review.loading"}}</p>
+        <DConditionalLoadingSpinner @condition={{true}} />
       {{else if this.allowed}}
         <header class="school-review-header">
           <h1>{{i18n "school_engine.review.title"}}</h1>
@@ -147,29 +177,38 @@ export default class SchoolReviewPanel extends Component {
         </header>
 
         {{#if this.board}}
-          <section class="school-review-board">
-            <div class="school-review-stat">
-              <span class="num">{{this.board.states.pending}}</span>
-              <span class="label">{{i18n "school_engine.review.stat_pending"}}</span>
+          <div class="d-stat-tiles --grid-3 school-review-board">
+            <div class="d-stat-tile" role="group">
+              <div class="d-stat-tile__top">
+                <span class="d-stat-tile__label">{{i18n "school_engine.review.stat_pending"}}</span>
+              </div>
+              <span class="d-stat-tile__value">{{this.board.states.pending}}</span>
             </div>
-            <div class="school-review-stat">
-              <span class="num">{{this.board.states.escalated}}</span>
-              <span class="label">{{i18n "school_engine.review.stat_escalated"}}</span>
+            <div class="d-stat-tile" role="group">
+              <div class="d-stat-tile__top">
+                <span class="d-stat-tile__label">{{i18n "school_engine.review.stat_escalated"}}</span>
+              </div>
+              <span class="d-stat-tile__value">{{this.board.states.escalated}}</span>
             </div>
-            <div class="school-review-stat">
-              <span class="num">{{this.board.states.folded}}</span>
-              <span class="label">{{i18n "school_engine.review.stat_folded"}}</span>
+            <div class="d-stat-tile" role="group">
+              <div class="d-stat-tile__top">
+                <span class="d-stat-tile__label">{{i18n "school_engine.review.stat_folded"}}</span>
+              </div>
+              <span class="d-stat-tile__value">{{this.board.states.folded}}</span>
             </div>
-            <div class="school-review-stat is-warn">
-              <span class="num">{{this.board.overdue}}</span>
-              <span class="label">{{i18n "school_engine.review.stat_overdue"}}</span>
+            <div class="d-stat-tile" role="group">
+              <div class="d-stat-tile__top">
+                <span class="d-stat-tile__label">{{i18n "school_engine.review.stat_overdue"}}</span>
+              </div>
+              <span class="d-stat-tile__value">{{this.board.overdue}}</span>
             </div>
-            <div class="school-review-stat">
-              <span class="num">{{this.board.ai_flagged}}</span>
-              <span class="label">{{i18n "school_engine.review.stat_ai"}}</span>
+            <div class="d-stat-tile" role="group">
+              <div class="d-stat-tile__top">
+                <span class="d-stat-tile__label">{{i18n "school_engine.review.stat_ai"}}</span>
+              </div>
+              <span class="d-stat-tile__value">{{this.board.ai_flagged}}</span>
             </div>
-            <a class="school-review-export" href={{this.exportUrl}}>{{i18n "school_engine.review.export"}}</a>
-          </section>
+          </div>
         {{/if}}
 
         <section class="school-review-toolbar">
@@ -183,93 +222,189 @@ export default class SchoolReviewPanel extends Component {
             @action={{fn this.setFilter "overdue"}}
             class="btn-default {{if (eq this.filter 'overdue') 'is-active'}}"
           />
-          <span class="school-review-total">共 {{this.total}} 条</span>
-          <DButton @translatedLabel={{i18n "school_engine.review.refresh"}} @action={{this.refresh}} class="btn-default" />
+          <span class="school-review-total">
+            {{i18n "school_engine.review.total_count" count=this.total}}
+          </span>
+          <DButton
+            @translatedLabel={{i18n "school_engine.review.refresh"}}
+            @action={{this.refresh}}
+            @icon="arrows-rotate"
+            class="btn-default"
+          />
+          <a class="school-review-export" href={{this.exportUrl}}>
+            {{i18n "school_engine.review.export"}}
+          </a>
         </section>
 
-        <ul class="school-review-list">
-          {{#each this.items as |item|}}
-            <li class="school-review-item {{if item.overdue 'is-overdue'}}">
-              <div class="school-review-item-head">
-                <span class="school-review-state state-{{item.state}}">{{item.state}}</span>
-                {{#each item.categories as |c|}}
-                  <span class="school-review-tag">{{c.label}}</span>
-                {{/each}}
-                {{#if item.overdue}}<span class="school-review-overdue">{{i18n "school_engine.review.overdue"}}</span>{{/if}}
-                {{#if item.conflict}}<span class="school-review-conflict">{{i18n "school_engine.review.conflict"}}</span>{{/if}}
-              </div>
-              <div class="school-review-item-body">
-                <div class="school-review-item-title">{{item.topic_title}}</div>
-                <div class="school-review-item-author">
-                  {{item.author}} · {{item.author_class}} · #{{item.post_number}}
+        {{#if this.isEmpty}}
+          <DEmptyState @title={{i18n "school_engine.review.empty"}} />
+        {{else}}
+          <ul class="school-review-list">
+            {{#each this.items as |item|}}
+              <li class="school-review-item {{if item.overdue 'is-overdue'}}">
+                <div class="school-review-item-head">
+                  <span class="school-review-state state-{{item.state}}">
+                    {{this.stateLabel item.state}}
+                  </span>
+                  {{#each item.categories as |c|}}
+                    <span class="school-review-tag">{{c.label}}</span>
+                  {{/each}}
+                  {{#if item.overdue}}
+                    <span class="school-review-overdue">
+                      {{i18n "school_engine.review.overdue"}}
+                    </span>
+                  {{/if}}
+                  {{#if item.conflict}}
+                    <span class="school-review-conflict">
+                      {{i18n "school_engine.review.conflict"}}
+                    </span>
+                  {{/if}}
                 </div>
-                <p class="school-review-item-excerpt">{{item.excerpt}}</p>
-                <div class="school-review-item-meta">
-                  <span>举报 {{item.report_count}} 次</span>
-                  <span>AI {{item.ai.action}} ({{item.ai.score}})</span>
-                  <span>{{i18n "school_engine.review.deadline"}} {{item.deadline}}</span>
+
+                <div class="school-review-item-body">
+                  <div class="school-review-item-title">{{item.topic_title}}</div>
+                  <div class="school-review-item-author">
+                    {{item.author}} · {{item.author_class}} · #{{item.post_number}}
+                  </div>
+                  <p class="school-review-item-excerpt">{{item.excerpt}}</p>
+                  <div class="school-review-item-meta">
+                    <span>{{i18n "school_engine.review.report_count" count=item.report_count}}</span>
+                    <span>AI {{item.ai.action}} ({{item.ai.score}})</span>
+                    <span>{{i18n "school_engine.review.deadline"}} {{item.deadline}}</span>
+                  </div>
                 </div>
-              </div>
-              <div class="school-review-item-actions">
-                <DButton @translatedLabel={{i18n "school_engine.review.open"}} @action={{fn this.open item}} class="btn-primary" />
-                <a href={{item.url}} target="_blank" rel="noopener noreferrer">查看原帖</a>
-              </div>
-            </li>
-          {{else}}
-            <li class="school-review-empty">{{i18n "school_engine.review.empty"}}</li>
-          {{/each}}
-        </ul>
+
+                <div class="school-review-item-actions">
+                  <DButton
+                    @translatedLabel={{i18n "school_engine.review.open"}}
+                    @action={{fn this.open item}}
+                    class="btn-primary"
+                  />
+                  <a href={{item.url}} target="_blank" rel="noopener noreferrer">
+                    {{i18n "school_engine.review.view_post"}}
+                  </a>
+                </div>
+              </li>
+            {{/each}}
+          </ul>
+        {{/if}}
 
         <section class="school-review-appeals">
           <h2>{{i18n "school_engine.review.appeals_title"}}</h2>
-          <ul>
-            {{#each this.appeals as |a|}}
-              <li class="school-review-appeal">
-                <div>
-                  <strong>{{a.username}}</strong>
-                  <span class="school-review-tag">#{{a.post_id}}</span>
-                  <p>{{a.body}}</p>
-                </div>
-                <div class="school-review-appeal-actions">
-                  <DButton @translatedLabel={{i18n "school_engine.review.appeal_uphold"}} @action={{fn this.resolveAppeal a.user_id "uphold"}} class="btn-primary" />
-                  <DButton @translatedLabel={{i18n "school_engine.review.appeal_reject"}} @action={{fn this.resolveAppeal a.user_id "reject"}} class="btn-default" />
-                </div>
-              </li>
-            {{else}}
-              <li class="school-review-empty">{{i18n "school_engine.review.no_appeals"}}</li>
-            {{/each}}
-          </ul>
+          {{#if this.appeals.length}}
+            <ul>
+              {{#each this.appeals as |a|}}
+                <li class="school-review-appeal">
+                  <div>
+                    <strong>{{a.username}}</strong>
+                    <span class="school-review-tag">#{{a.post_id}}</span>
+                    <p>{{a.body}}</p>
+                  </div>
+                  <div class="school-review-appeal-actions">
+                    <DButton
+                      @translatedLabel={{i18n "school_engine.review.appeal_uphold"}}
+                      @action={{fn this.resolveAppeal a.user_id "uphold"}}
+                      class="btn-primary"
+                    />
+                    <DButton
+                      @translatedLabel={{i18n "school_engine.review.appeal_reject"}}
+                      @action={{fn this.resolveAppeal a.user_id "reject"}}
+                      class="btn-default"
+                    />
+                  </div>
+                </li>
+              {{/each}}
+            </ul>
+          {{else}}
+            <p class="school-review-empty-line">{{i18n "school_engine.review.no_appeals"}}</p>
+          {{/if}}
         </section>
 
         {{#if this.openDetail}}
-          <div class="school-review-drawer">
-            <div class="school-review-drawer-head">
-              <h2>{{this.openDetail.topic_title}} · #{{this.openDetail.post_number}}</h2>
-              <DButton @translatedLabel={{i18n "school_engine.review.close"}} @action={{this.close}} class="btn-default" />
-            </div>
-            <p class="school-review-drawer-raw">{{this.openDetail.raw}}</p>
-            <label class="school-review-note">
-              <span>{{i18n "school_engine.review.note"}}</span>
-              <textarea rows="2" {{on "input" this.updateNote}} placeholder={{i18n "school_engine.review.note_placeholder"}}></textarea>
-            </label>
-            <div class="school-review-drawer-actions">
-              <DButton @translatedLabel={{i18n "school_engine.review.act_hint"}} @action={{fn this.act "hint"}} class="btn-default" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_fold"}} @action={{fn this.act "fold"}} class="btn-default" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_pending"}} @action={{fn this.act "hide_pending"}} class="btn-default" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_timed"}} @action={{fn this.act "hide_timed"}} class="btn-default" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_remove"}} @action={{fn this.act "remove"}} class="btn-danger" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_escalate"}} @action={{fn this.act "escalate"}} class="btn-default" @isLoading={{this.busy}} />
-              <DButton @translatedLabel={{i18n "school_engine.review.act_restore"}} @action={{fn this.act "restore"}} class="btn-primary" @isLoading={{this.busy}} />
-            </div>
-            <ol class="school-review-log">
-              {{#each this.openDetail.events as |e|}}
-                <li><code>{{e.at}}</code> <strong>{{e.kind}}</strong> {{e.note}}</li>
-              {{/each}}
-            </ol>
-          </div>
+          <DModal
+            @closeModal={{this.close}}
+            @title={{i18n "school_engine.review.detail_title"}}
+            class="school-review-drawer"
+          >
+            <:body>
+              <h3 class="school-review-detail-title">
+                {{this.openDetail.topic_title}} · #{{this.openDetail.post_number}}
+              </h3>
+              <p class="school-review-drawer-raw">{{this.openDetail.raw}}</p>
+
+              <label class="school-review-note">
+                <span>{{i18n "school_engine.review.note"}}</span>
+                <DExpandingTextArea
+                  rows="2"
+                  @value={{this.note}}
+                  placeholder={{i18n "school_engine.review.note_placeholder"}}
+                  {{on "input" this.updateNote}}
+                />
+              </label>
+
+              <ol class="school-review-log">
+                {{#each this.openDetail.events as |e|}}
+                  <li>
+                    <code>{{e.at}}</code>
+                    <strong>{{e.kind}}</strong>
+                    {{e.note}}
+                  </li>
+                {{/each}}
+              </ol>
+            </:body>
+            <:footer>
+              <div class="school-review-drawer-actions">
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_hint"}}
+                  @action={{fn this.act "hint"}}
+                  class="btn-default"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_fold"}}
+                  @action={{fn this.act "fold"}}
+                  class="btn-default"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_pending"}}
+                  @action={{fn this.act "hide_pending"}}
+                  class="btn-default"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_timed"}}
+                  @action={{fn this.act "hide_timed"}}
+                  class="btn-default"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_remove"}}
+                  @action={{fn this.act "remove"}}
+                  class="btn-danger"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_escalate"}}
+                  @action={{fn this.act "escalate"}}
+                  class="btn-default"
+                  @isLoading={{this.busy}}
+                />
+                <DButton
+                  @translatedLabel={{i18n "school_engine.review.act_restore"}}
+                  @action={{fn this.act "restore"}}
+                  class="btn-primary"
+                  @isLoading={{this.busy}}
+                />
+              </div>
+            </:footer>
+          </DModal>
         {{/if}}
       {{else}}
-        <p class="school-review-denied">{{i18n "school_engine.review.denied"}}</p>
+        <DEmptyState
+          @title={{i18n "school_engine.review.denied"}}
+          @body={{i18n "school_engine.review.denied_body"}}
+        />
       {{/if}}
     </div>
   </template>

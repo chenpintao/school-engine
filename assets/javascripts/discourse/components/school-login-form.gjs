@@ -18,6 +18,19 @@ export default class SchoolLoginForm extends Component {
   @tracked password = "";
   @tracked error = null;
   @tracked submitting = false;
+  @tracked showPassword = false;
+
+  @action
+  togglePassword() {
+    this.showPassword = !this.showPassword;
+  }
+
+  @action
+  clearError() {
+    if (this.error) {
+      this.error = null;
+    }
+  }
 
   @action
   onEnterKey(event) {
@@ -80,12 +93,37 @@ export default class SchoolLoginForm extends Component {
 
       <form {{on "submit" this.doLogin}}>
         <div class="school-field">
-          <label>{{i18n "school_engine.username"}}</label>
-          <Input @type="text" @value={{this.loginName}} autocomplete="username" {{on "keydown" this.onEnterKey}} />
+          <label for="school-login-name">{{i18n "school_engine.username"}}</label>
+          <Input
+            @id="school-login-name"
+            @type="text"
+            @value={{this.loginName}}
+            autocomplete="username"
+            @autofocus={{true}}
+            {{on "input" this.clearError}}
+            {{on "keydown" this.onEnterKey}}
+          />
         </div>
-        <div class="school-field">
-          <label>{{i18n "school_engine.password"}}</label>
-          <Input @type="password" @value={{this.password}} autocomplete="current-password" {{on "keydown" this.onEnterKey}} />
+        <div class="school-field school-field--password">
+          <label for="school-login-password">{{i18n "school_engine.password"}}</label>
+          <div class="school-password-wrap">
+            <Input
+              @id="school-login-password"
+              @type={{if this.showPassword "text" "password"}}
+              @value={{this.password}}
+              autocomplete="current-password"
+              {{on "input" this.clearError}}
+              {{on "keydown" this.onEnterKey}}
+            />
+            <button
+              type="button"
+              class="school-password-toggle"
+              {{on "click" this.togglePassword}}
+              aria-label={{i18n "school_engine.toggle_password"}}
+            >
+              {{#if this.showPassword}}🙈{{else}}👁{{/if}}
+            </button>
+          </div>
         </div>
 
         <DButton @label="school_engine.login" @type="primary" @buttonType="submit" @isLoading={{this.submitting}} class="school-submit-btn" />

@@ -43,6 +43,14 @@ module SchoolEngine
       (Array(cats) & SLA_MINUTES.keys).map { |c| SLA_MINUTES[c] }.min || DEFAULT_SLA_MINUTES
     end
 
+    # 看板统计缓存失效（举报/处置后必须刷新，避免展示陈旧数据）
+    def self.invalidate_board_cache!
+      (1..90).each { |d| Rails.cache.delete("school_engine:board:#{d}") }
+      nil
+    rescue StandardError
+      nil
+    end
+
     # 安全解析 ISO 时间，非法值返回 nil（避免定时任务整批崩溃）
     def self.parse_time(value)
       return nil if value.blank?
@@ -94,6 +102,7 @@ module SchoolEngine
         },
       )
       post.save_custom_fields(true)
+      invalidate_board_cache!
     end
 
     # ---- 处置 ----
@@ -133,6 +142,7 @@ module SchoolEngine
       unless sync_visibility!(post)
         raise Discourse::InvalidAccess.new("可见性同步失败，请重试")
       end
+      invalidate_board_cache!
       post
     end
 
@@ -305,16 +315,25 @@ module SchoolEngine
     end
 
     def self.notify_staff_high_risk!(post, cats)
-      Group.find_by(name: SiteSetting.school_engine_moderation_group.to_s.presence || "moderators")
-      target = Group.where(name: [SiteSetting.school_engine_moderation_group.to_s, "moderators"].uniq).first
+      names = [SiteSetting.school_engine_moderation_group.to_s, "moderators"].reject(&:blank?).uniq
+      return if names.empty?
+
+      target = Group.where(name: names).order(Arel.sql("CASE WHEN name = 'moderators' THEN 1 ELSE 0 END")).first
       return unless target
-      GroupUser.where(group_id: target.id).includes(:user).each do |gu|
+
+      # 预先算好文案，避免循环内重复 I18n / 字符串拼接
+      category_label = cats.map { |c| ReportCategories.label(c) }.join("、")
+      review_url = "#{Discourse.base_url}/school/review"
+      topic_title = post.topic&.title.to_s
+
+      # 只取必要列，避免加载完整 User 对象
+      User.where(id: GroupUser.where(group_id: target.id).select(:user_id)).find_each do |user|
         notify(
-          gu.user,
+          user,
           "high_risk_report",
-          topic_title: post.topic&.title.to_s,
-          url: "#{Discourse.base_url}/school/review",
-          categories: cats.map { |c| ReportCategories.label(c) }.join("、"),
+          topic_title: topic_title,
+          url: review_url,
+          categories: category_label,
         )
       end
     rescue => e

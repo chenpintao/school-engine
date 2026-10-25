@@ -78,3 +78,16 @@ school_engine:
       - hint
       - fold
       - hide
+  # ---- 审计日志 ----
+  school_engine_audit_enabled:
+    default: true
+  # 单个审计日志文件上限（MB），超过后自动轮转并 gzip 压缩
+  school_engine_audit_max_mb:
+    default: 20
+    min: 1
+    max: 200
+  # 归档日志保留天数，超期自动删除
+  school_engine_audit_keep_days:
+    default: 90
+    min: 1
+    max: 365

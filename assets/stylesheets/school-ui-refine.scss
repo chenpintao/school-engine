@@ -1,0 +1,331 @@
+// ===========================================================================
+// 界面精简与深度融入 Discourse
+//
+// 原则：
+//  1. 保留简洁风，去掉冗余元素
+//  2. 隐藏原生审核/举报按钮，统一走插件入口
+//  3. 侧边栏无用项隐藏，插件分区上移
+//  4. 编辑器工具栏按实用性重排
+//  5. 全部复用 Discourse 设计变量，自动适配深/浅色与主题
+//
+// 注意：Discourse 工具栏按钮的 className 默认等于按钮 id
+// （composer/toolbar.ts: `createdButton.className ||= buttonAttrs.id`），
+// 因此可用的选择器是 .bold / .italic / .blockquote / .code / .link /
+// .heading / .list / .emoji；上传按钮由插件注册，class 为 .upload。
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// 1. 侧边栏
+// ---------------------------------------------------------------------------
+
+// 插件「校园」分区整体上移：排在社区分区之前
+.sidebar-sections > [data-section-name="school"] {
+  order: -10;
+}
+
+// 隐藏校园场景下几乎不用的分区（需要恢复时注释掉对应行）
+.sidebar-sections > [data-section-name="tags"],
+.sidebar-sections > [data-section-name="messages"] {
+  display: none !important;
+}
+
+// 校园分区更紧凑
+[data-section-name="school"] {
+  .sidebar-section-link {
+    padding-block: 0.35rem;
+  }
+
+  .sidebar-section-header-text {
+    font-weight: 600;
+  }
+}
+
+// 页脚去掉 Powered by Discourse
+.sidebar-footer .powered-by-discourse {
+  display: none !important;
+}
+
+// ---------------------------------------------------------------------------
+// 2. 帖子菜单：隐藏原生审核/举报入口
+// ---------------------------------------------------------------------------
+
+// 原生 flag 已通过 value transformer 移除，这里兜底
+.post-action-menu__flag,
+.post-controls .actions button[title*="举报"],
+.post-controls .actions button[title*="Flag"] {
+  display: none !important;
+}
+
+// 插件按钮弱化，避免抢占视觉焦点
+.post-action-menu__school-report,
+.post-action-menu__school-feature {
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. 编辑器工具栏重排
+//
+// 校园场景高频顺序：
+//   上传图片 > 表情 > 引用 > 列表 > 加粗 > 斜体 > 代码 > 链接 > 标题
+// ---------------------------------------------------------------------------
+
+.d-editor-button-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+
+  .upload {
+    order: 1;
+  }
+
+  .emoji {
+    order: 2;
+  }
+
+  .blockquote {
+    order: 3;
+  }
+
+  .list {
+    order: 4;
+  }
+
+  .bold {
+    order: 5;
+  }
+
+  .italic {
+    order: 6;
+  }
+
+  .code {
+    order: 10;
+  }
+
+  .link {
+    order: 11;
+  }
+
+  .heading {
+    order: 20;
+  }
+
+  .gifs {
+    order: 21;
+  }
+
+  // 插件模式切换滑块固定最右
+  .school-composer-mode-switch {
+    order: 99;
+    margin-left: auto;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4. 编辑器整体
+// ---------------------------------------------------------------------------
+
+.d-editor-container,
+.d-editor {
+  border-radius: var(--d-border-radius);
+}
+
+.d-editor-preview-wrapper {
+  border-left: 1px solid var(--primary-low);
+}
+
+.composer-fields .title-and-category {
+  gap: 0.5rem;
+}
+
+// ---------------------------------------------------------------------------
+// 5. 插件页面统一容器
+// ---------------------------------------------------------------------------
+
+.school-auth-page,
+.school-config,
+.school-review,
+.school-directory-page,
+.school-profile-page {
+  max-width: 860px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+.school-page-title {
+  margin: 0 0 0.35rem;
+  font-size: var(--font-up-2);
+  font-weight: 600;
+}
+
+.school-page-subtitle {
+  margin: 0 0 1.25rem;
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+  line-height: 1.5;
+}
+
+// ---------------------------------------------------------------------------
+// 6. 通用卡片
+// ---------------------------------------------------------------------------
+
+.school-card {
+  padding: 1rem 1.15rem;
+  margin-bottom: 0.85rem;
+  background: var(--secondary);
+  border: 1px solid var(--primary-low);
+  border-radius: var(--d-border-radius);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    border-color: var(--primary-medium);
+  }
+}
+
+.school-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+
+  h2,
+  h3 {
+    margin: 0;
+    font-size: var(--font-up-1);
+  }
+}
+
+.school-muted {
+  color: var(--primary-medium);
+  font-size: var(--font-down-1);
+}
+
+// ---------------------------------------------------------------------------
+// 7. 登录表单增强（字段基础样式见 school-engine.scss）
+// ---------------------------------------------------------------------------
+
+.school-password-wrap {
+  position: relative;
+
+  input {
+    padding-right: 2.6rem;
+  }
+}
+
+.school-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  font-size: var(--font-down-1);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transform: translateY(-50%);
+  opacity: 0.65;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--primary-very-low);
+    opacity: 1;
+  }
+}
+
+.school-field input:focus {
+  border-color: var(--tertiary);
+  outline: none;
+}
+
+.school-submit-btn {
+  width: 100%;
+  margin-top: 0.35rem;
+}
+
+.school-switch {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: var(--font-down-1);
+}
+
+// ---------------------------------------------------------------------------
+// 8. 动效与可访问性
+// ---------------------------------------------------------------------------
+
+.school-review-item,
+.school-report-cat {
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.school-review-item:hover {
+  border-color: var(--primary-medium);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .school-card,
+  .school-review-item,
+  .school-report-cat,
+  .post-action-menu__school-report,
+  .post-action-menu__school-feature {
+    transition: none;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 9. 移动端适配
+// ---------------------------------------------------------------------------
+
+@media (width < 40rem) {
+  .school-auth-page,
+  .school-config,
+  .school-review,
+  .school-directory-page,
+  .school-profile-page {
+    padding-inline: 0.75rem;
+  }
+
+  // 移动端隐藏低频编辑按钮
+  .d-editor-button-bar {
+    .link,
+    .heading,
+    .gifs {
+      display: none;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 10. 举报分类选择态
+// ---------------------------------------------------------------------------
+
+.school-report-cat {
+  position: relative;
+
+  &.is-selected {
+    border-color: var(--tertiary) !important;
+    background: var(--tertiary-very-low) !important;
+    box-shadow: inset 0 0 0 1px var(--tertiary);
+  }
+
+  .school-report-cat-check {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.45rem;
+    font-size: var(--font-down-1);
+    font-weight: 700;
+    color: var(--tertiary);
+  }
+}

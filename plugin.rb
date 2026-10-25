@@ -12,6 +12,7 @@ enabled_site_setting :school_engine_enabled
 register_locale :zh_CN
 
 register_asset "stylesheets/school-engine.scss"
+register_asset "stylesheets/school-ui-refine.scss"
 
 register_svg_icon "address-book"
 register_svg_icon "user-group"
@@ -50,6 +51,8 @@ after_initialize do
   require_relative "lib/school_engine/moderation"
   require_relative "lib/school_engine/ai_review"
   require_relative "lib/school_engine/login_redirect"
+  require_relative "lib/school_engine/audit"
+  require_relative "lib/school_engine/audit_hook"
 
   # ---- 用户自定义字段注册（必须在 after_initialize 内）----
   # 学籍字段（字符串型）
@@ -257,6 +260,13 @@ after_initialize do
   reloadable_patch do
     ::HomePageController.prepend(SchoolEngine::LoginRedirect)
     ::ApplicationController.prepend(SchoolEngine::CoreLoginEntryPoint)
+  end
+
+  # 统一审计：所有插件控制器自动记录访问/查看/修改
+  reloadable_patch do
+    ::SchoolEngine::SchoolEngineController.include(SchoolEngine::AuditHook)
+    ::SchoolEngine::ReportsController.include(SchoolEngine::AuditHook)
+    ::SchoolEngine::SchoolEnginePagesController.include(SchoolEngine::AuditHook)
   end
 
   # ---- 序列化补丁（prepend + super，热重载安全）----

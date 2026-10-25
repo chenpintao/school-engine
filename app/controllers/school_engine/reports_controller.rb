@@ -50,6 +50,12 @@ module SchoolEngine
         Moderation.auto_triage!(post)
       end
 
+      SchoolEngine::Audit.change(
+        "report",
+        actor: current_user,
+        target: post,
+        extra: { "category" => category, "anonymous" => anonymous, "duplicate" => already, "has_reason" => reason.present? },
+      )
       render json: {
         success: true,
         duplicate: already,
@@ -72,19 +78,30 @@ module SchoolEngine
           .order("posts.id DESC")
 
       if params[:filter].to_s == "overdue"
-        ids = scope.pluck(:id).select do |id|
-          p = Post.find_by(id: id)
-          p && Moderation.overdue?(p)
-        end
-        scope = Post.where(id: ids).order(id: :desc)
+        # 直接在 SQL 层筛选已逾期且未首次响应的记录，避免逐条 find_by（原为 N+1）
+        scope =
+          scope
+            .joins("JOIN post_custom_fields dl ON dl.post_id = posts.id AND dl.name = 'mod_deadline'")
+            .joins(
+              "LEFT JOIN post_custom_fields fr ON fr.post_id = posts.id AND fr.name = 'mod_first_response'",
+            )
+            .where("dl.value < ?", Time.zone.now.iso8601)
+            .where("fr.value IS NULL OR fr.value = ''")
+            .where("mcf.value NOT IN ('removed','normal')")
+          @overdue_filtered = true
       end
 
       limit = [[params[:limit].to_i.positive? ? params[:limit].to_i : 30, 100].min, 1].max
       offset = [params[:offset].to_i, 0].max
+      # count 只查一次，避免原来重复执行
+      total = scope.count
       posts = scope.includes(:topic, :user).limit(limit).offset(offset).to_a
+      # 批量预取信任等级提示与避嫌所需数据，避免 queue_item 内逐条查库
+      preload_queue_hints(posts)
 
+      SchoolEngine::Audit.view("review_queue", actor: current_user, extra: { "filter" => params[:filter].to_s, "total" => total })
       render json: {
-        total: scope.count,
+        total: total,
         items: posts.map { |p| queue_item(p) },
       }
     end
@@ -93,6 +110,7 @@ module SchoolEngine
     def detail
       post = Post.find_by(id: params[:post_id].to_i)
       raise Discourse::NotFound if post.nil?
+      SchoolEngine::Audit.view("review_detail", actor: current_user, target: post)
       render json: queue_item(post, full: true)
     end
 
@@ -164,6 +182,7 @@ module SchoolEngine
         Moderation.notify_author!(post, state: state, note: note)
       end
 
+      SchoolEngine::Audit.change("review_act", actor: current_user, target: post, extra: { "action" => action, "state" => state, "has_note" => note.present? })
       render json: { success: true, state: state }
     end
 
@@ -185,27 +204,53 @@ module SchoolEngine
     # GET /school/review-board.json —— 举报看板（统计）
     def board
       now = Time.zone.now
-      since = now - params[:days].to_i.clamp(1, 90).days
+      days = params[:days].to_i.clamp(1, 90)
+      since = now - days.days
 
-      states = Hash.new(0)
-      PostCustomField.where(name: "mod_state").find_each { |cf| states[cf.value] += 1 }
+      # 看板统计较重，缓存 30 秒：复核台反复刷新时不会重复全表扫描
+      cache_key = "school_engine:board:#{days}"
+      payload =
+        Rails.cache.fetch(cache_key, expires_in: 30.seconds) do
+          # 状态分布：交给数据库聚合，不再把全部记录加载到 Ruby
+          states = Hash.new(0)
+          PostCustomField
+            .where(name: "mod_state")
+            .group(:value)
+            .count
+            .each { |value, count| states[value] += count }
 
-      cats = Hash.new(0)
-      PostCustomField.where(name: "report_cats").where("updated_at > ?", since).find_each do |cf|
-        cf.value.to_s.split(",").each { |c| cats[c] += 1 unless c.blank? }
-      end
+          # 分类分布：近 N 天内的举报
+          cats = Hash.new(0)
+          PostCustomField
+            .where(name: "report_cats")
+            .where("updated_at > ?", since)
+            .pluck(:value)
+            .each do |value|
+              value.to_s.split(",").each { |c| cats[c] += 1 unless c.blank? }
+            end
 
-      overdue = PostCustomField.where(name: "mod_deadline").where("value < ?", now.iso8601).count
-      ai_flagged = PostCustomField.where(name: "ai_action").where.not(value: %w[none]).count
+          overdue =
+            PostCustomField
+              .where(name: "mod_deadline")
+              .where("value < ?", now.iso8601)
+              .count
+          ai_flagged =
+            PostCustomField.where(name: "ai_action").where.not(value: %w[none]).count
 
-      render json: {
-        states: states,
-        categories: cats.sort_by { |_, v| -v }.map { |k, v| { code: k, label: ReportCategories.label(k), count: v } },
-        overdue: overdue,
-        ai_flagged: ai_flagged,
-        sla_minutes: Moderation::SLA_MINUTES,
-        generated_at: now.iso8601,
-      }
+          {
+            states: states,
+            categories:
+              cats
+                .sort_by { |_, v| -v }
+                .map { |k, v| { code: k, label: ReportCategories.label(k), count: v } },
+            overdue: overdue,
+            ai_flagged: ai_flagged,
+            sla_minutes: Moderation::SLA_MINUTES,
+          }
+        end
+
+      SchoolEngine::Audit.view("review_board", actor: current_user, extra: { "days" => days })
+      render json: payload.merge(generated_at: now.iso8601)
     end
 
     # GET /school/review-export.csv —— 审核日志导出（staff）
@@ -237,6 +282,7 @@ module SchoolEngine
             ]
           end
         end
+      SchoolEngine::Audit.change("audit_export", actor: current_user)
       send_data csv, filename: "审核日志-#{Time.current.strftime("%Y%m%d")}.csv", type: "text/csv; charset=utf-8"
     end
 
@@ -295,6 +341,7 @@ module SchoolEngine
       Moderation.log_event!(post, "appeal", { "by" => current_user.id })
       post.save_custom_fields(true)
 
+      SchoolEngine::Audit.change("appeal", actor: current_user, target: post)
       render json: { success: true, message: I18n.t("school_engine.report.appeal_received") }
     end
 
@@ -328,10 +375,72 @@ module SchoolEngine
       end
       user.save_custom_fields(true)
 
+      SchoolEngine::Audit.change("resolve_appeal", actor: current_user, target: post, extra: { "result" => result, "user_id" => user.id })
       render json: { success: true }
     end
 
     private
+
+    # 批量预取：一次查询拿到所有相关举报人的信任等级、以及当前用户的班级圈，
+    # 避免 queue_item 中对每条帖子分别查库（原为 O(n) 次查询）。
+    def preload_queue_hints(posts)
+      return if posts.empty?
+
+      post_ids = posts.map(&:id)
+
+      # 1) 信任等级提示：帖子 -> 举报人 user_id 列表
+      report_rows =
+        PostCustomField.where(name: "report_ids", post_id: post_ids).pluck(:post_id, :value)
+      reporter_map = {}
+      report_rows.each do |pid, val|
+        ids = val.to_s.split(",").reject(&:blank?).map(&:to_i)
+        reporter_map[pid] = ids if ids.any?
+      end
+
+      all_reporter_ids = reporter_map.values.flatten.uniq
+      trust_by_user =
+        User.where(id: all_reporter_ids).pluck(:id, :trust_level).to_h
+
+      @trust_hints = {}
+      reporter_map.each do |pid, ids|
+        levels = ids.filter_map { |uid| trust_by_user[uid] }
+        @trust_hints[pid] = levels.max if levels.any?
+      end
+
+      # 2) 避嫌判定：预先算好当前用户的班级圈
+      @conflicts = {}
+      return if current_user.nil? || current_user.admin?
+
+      my_groups =
+        current_user.groups.where("name LIKE 'xx-%' OR name LIKE 'cz-%'").pluck(:name)
+      if my_groups.empty?
+        posts.each { |p| @conflicts[p.id] = false }
+        return
+      end
+
+      author_ids = posts.map(&:user_id).compact.uniq
+      if author_ids.any?
+        author_groups =
+          GroupUser
+            .joins(:group)
+            .where(user_id: author_ids)
+            .where("groups.name LIKE 'xx-%' OR groups.name LIKE 'cz-%'")
+            .pluck(:user_id, "groups.name")
+        groups_by_author = Hash.new { |h, k| h[k] = [] }
+        author_groups.each { |uid, gname| groups_by_author[uid] << gname }
+      else
+        groups_by_author = {}
+      end
+
+      posts.each do |p|
+        @conflicts[p.id] =
+          if p.user_id == current_user.id
+            true
+          else
+            (my_groups & Array(groups_by_author[p.user_id])).any?
+          end
+      end
+    end
 
     def ensure_can_review
       return if current_user&.staff?
@@ -361,7 +470,7 @@ module SchoolEngine
         report_count: post.custom_fields["report_count"].to_i,
         anonymous_reports: Moderation.events(post).count { |e| e["kind"] == "reported" && e["by"] == "anonymous" },
         reporter_weight: Moderation.reporter_weight(post),
-        trust_hint: Moderation.trust_hint(post),
+        trust_hint: @trust_hints&.fetch(post.id, nil) || Moderation.trust_hint(post),
         ai: {
           state: post.custom_fields["ai_state"],
           score: post.custom_fields["ai_score"],
@@ -373,7 +482,7 @@ module SchoolEngine
         first_response: post.custom_fields["mod_first_response"],
         assignee: post.custom_fields["mod_assignee"],
         expires_at: post.custom_fields["mod_expires_at"],
-        conflict: Moderation.conflict?(post, current_user),
+        conflict: @conflicts&.fetch(post.id, false) || Moderation.conflict?(post, current_user),
       }
       if full
         data[:raw] = post.raw

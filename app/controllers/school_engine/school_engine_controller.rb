@@ -209,6 +209,7 @@ module SchoolEngine
         end
       end
 
+      SchoolEngine::Audit.change("register", actor: user, target: user, extra: { "identity" => identity, "invite" => invite.present? })
       render json: { success: true, username: user.username, invite_redeemed: invite_redeemed }
     rescue ActiveRecord::RecordInvalid => e
       render json: { errors: e.record.errors.full_messages }, status: :unprocessable_entity
@@ -286,6 +287,14 @@ module SchoolEngine
       end
       u.save_custom_fields(true)
       DiscourseEvent.trigger(:user_updated, u)
+      SchoolEngine::Audit.change(
+        "profile",
+        actor: u,
+        target: u,
+        extra: {
+          "fields" => (contact.keys + visibility.keys + params.keys.map(&:to_s)).uniq.first(20),
+        },
+      )
       render json: success_json
     end
 
@@ -336,6 +345,7 @@ module SchoolEngine
       scope = scope.where(id: directory_match_scope(query)) if query.present?
 
       users = scope.order("username_lower ASC").limit(limit).to_a
+      SchoolEngine::Audit.view("directory", actor: current_user, extra: { "query" => query, "limit" => limit, "result_count" => users.size })
       render json: { users: users.map { |u| directory_user_json(u) } }
     end
 
@@ -363,6 +373,7 @@ module SchoolEngine
         posts = posts.where("posts.topic_id NOT IN (#{timeline_hidden_sql})")
       end
 
+      SchoolEngine::Audit.view("timeline", actor: current_user, target: user, extra: { "post_count" => posts.size })
       render json: { posts: posts.map { |p| timeline_post_json(p) } }
     rescue Discourse::NotFound
       render json: { errors: ["user not found"] }, status: :not_found
@@ -694,6 +705,7 @@ module SchoolEngine
 
       post = Post.find(params[:post_id].to_i)
       if SchoolEngine::Featured.feature!(post)
+        SchoolEngine::Audit.change("feature_post", actor: current_user, target: post)
         SchoolEngine::Messages.featured_post_notification!(post)
         render json: success_json
       else
@@ -709,6 +721,7 @@ module SchoolEngine
     def unfeature_post
       post = Post.find(params[:post_id].to_i)
       SchoolEngine::Featured.unfeature!(post)
+      SchoolEngine::Audit.change("unfeature_post", actor: current_user, target: post)
       render json: success_json
     end
 
@@ -783,6 +796,12 @@ module SchoolEngine
 
       u.save_custom_fields(true)
       DiscourseEvent.trigger(:user_updated, u)
+      SchoolEngine::Audit.change(
+        "admin_update_user",
+        actor: current_user,
+        target: u,
+        extra: { "fields" => params.keys.map(&:to_s).first(20) },
+      )
       render json: success_json.merge(display_class: SchoolEngine::Grade.display_class(u))
     rescue Discourse::InvalidParameters => e
       render json: { errors: [e.message] }, status: :unprocessable_entity
@@ -822,6 +841,7 @@ module SchoolEngine
     # POST /school/admin-recircle.json —— 一键重新计算所有人的状态 / 群组 / 板块 / Chat 频道
     def admin_recircle
       stats = SchoolEngine::ClassCircle.recalculate_all!
+      SchoolEngine::Audit.change("admin_recircle", actor: current_user, extra: stats)
       render json: success_json.merge(stats)
     rescue => e
       render json: { errors: [e.message] }, status: :unprocessable_entity
@@ -905,6 +925,7 @@ module SchoolEngine
             ]
           end
         end
+      SchoolEngine::Audit.change("directory_export", actor: current_user, extra: { "rows" => users.size })
       send_data csv, filename: "同学录-#{Time.current.strftime("%Y%m%d")}.csv", type: "text/csv; charset=utf-8"
     end
 
@@ -939,6 +960,7 @@ module SchoolEngine
         u,
         "你已加入新班级圈子 #{SchoolEngine::Grade.display_class(u)}，旧班级仍可访问",
       )
+      SchoolEngine::Audit.change("transfer_class", actor: u, target: u, extra: { "to" => new_cls })
       render json: success_json
     rescue Discourse::InvalidParameters => e
       render json: { errors: [e.message] }, status: :unprocessable_entity

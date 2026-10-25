@@ -111,3 +111,6 @@ zh_CN:
     school_engine_ai_review_enabled: "启用 AI 自动关键词审核（异步队列，不阻塞发帖）"
     school_engine_ai_keywords: "追加敏感词（每行一个，仅服务端可见，接口不会返回词条）"
     school_engine_contact_leak_action: "联系方式泄露处置强度（提示 / 折叠 / 待复核）"
+    school_engine_audit_enabled: "启用审计日志（记录插件所有访问/查看/修改操作）"
+    school_engine_audit_max_mb: "审计日志单文件上限（MB），超出自动轮转并压缩"
+    school_engine_audit_keep_days: "归档日志保留天数，超期自动删除"

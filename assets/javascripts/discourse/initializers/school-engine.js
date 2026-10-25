@@ -138,6 +138,10 @@ export default {
 
       // 帖子菜单：staff 精选/取消精选（新版 glimmer post menu DAG；组件内部按分类+回帖条件自渲染）
       api.registerValueTransformer("post-menu-buttons", ({ value: dag, context }) => {
+        // 隐藏 Discourse 原生举报按钮（flag），统一改用插件的分类举报入口，
+        // 避免两套举报逻辑并存造成数据分散。
+        dag.remove("flag");
+
         dag.add("school-feature", SchoolFeatureButton, {
           after: context.firstButtonKey,
         });

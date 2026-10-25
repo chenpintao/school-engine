@@ -91,3 +91,47 @@ school_engine:
     default: 90
     min: 1
     max: 365
+  # ---- 界面定制（全部可在后台开关，无需改代码）----
+  school_engine_ui_enabled:
+    default: true
+    client: true
+  # 隐藏 Discourse 原生举报按钮，统一使用插件的分类举报入口
+  school_engine_hide_native_flag:
+    default: true
+    client: true
+  # 侧边栏：把「校园」分区移到最上方
+  school_engine_sidebar_school_first:
+    default: true
+    client: true
+  # 侧边栏：隐藏的分区（逗号分隔，可选 tags / messages / categories / school）
+  school_engine_sidebar_hidden_sections:
+    default: "tags,messages"
+    type: list
+    list_type: simple
+    client: true
+  # 隐藏页脚 Powered by Discourse
+  school_engine_hide_powered_by:
+    default: true
+    client: true
+  # 编辑器工具栏按钮顺序（逗号分隔的按钮类名；留空则使用 Discourse 默认顺序）
+  school_engine_composer_button_order:
+    default: "upload,emoji,blockquote,list,bold,italic,code,link,heading"
+    type: list
+    list_type: simple
+    client: true
+  # 移动端隐藏的编辑器按钮
+  school_engine_composer_mobile_hidden:
+    default: "link,heading,gifs"
+    type: list
+    list_type: simple
+    client: true
+  # 是否启用简洁/高级编辑器切换滑块
+  school_engine_composer_mode_switch:
+    default: true
+    client: true
+  # 插件页面内容区最大宽度（px）
+  school_engine_page_max_width:
+    default: 860
+    min: 600
+    max: 1400
+    client: true

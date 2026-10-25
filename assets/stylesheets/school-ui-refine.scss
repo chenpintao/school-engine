@@ -18,16 +18,12 @@
 // 1. 侧边栏
 // ---------------------------------------------------------------------------
 
-// 插件「校园」分区整体上移：排在社区分区之前
-.sidebar-sections > [data-section-name="school"] {
+// 校园分区上移由 body.school-ui-school-first 控制（见 initializers）
+body.school-ui-school-first .sidebar-sections > [data-section-name="school"] {
   order: -10;
 }
 
-// 隐藏校园场景下几乎不用的分区（需要恢复时注释掉对应行）
-.sidebar-sections > [data-section-name="tags"],
-.sidebar-sections > [data-section-name="messages"] {
-  display: none !important;
-}
+// 分区隐藏由前端按站点设置注入内联样式（见 initializers），此处不写死
 
 // 校园分区更紧凑
 [data-section-name="school"] {
@@ -40,8 +36,8 @@
   }
 }
 
-// 页脚去掉 Powered by Discourse
-.sidebar-footer .powered-by-discourse {
+// 页脚隐藏由 body.school-ui-hide-powered-by 控制
+body.school-ui-hide-powered-by .sidebar-footer .powered-by-discourse {
   display: none !important;
 }
 
@@ -49,11 +45,13 @@
 // 2. 帖子菜单：隐藏原生审核/举报入口
 // ---------------------------------------------------------------------------
 
-// 原生 flag 已通过 value transformer 移除，这里兜底
-.post-action-menu__flag,
-.post-controls .actions button[title*="举报"],
-.post-controls .actions button[title*="Flag"] {
-  display: none !important;
+// 原生 flag 由 value transformer 按设置移除，这里仅作兜底
+body.school-ui-hide-native-flag {
+  .post-action-menu__flag,
+  .post-controls .actions button[title*="举报"],
+  .post-controls .actions button[title*="Flag"] {
+    display: none !important;
+  }
 }
 
 // 插件按钮弱化，避免抢占视觉焦点
@@ -71,8 +69,14 @@
 // ---------------------------------------------------------------------------
 // 3. 编辑器工具栏重排
 //
-// 校园场景高频顺序：
-//   上传图片 > 表情 > 引用 > 列表 > 加粗 > 斜体 > 代码 > 链接 > 标题
+// Discourse 工具栏按钮的 className 默认等于按钮 id（composer/toolbar.ts:
+// `createdButton.className ||= buttonAttrs.id`），因此可用选择器是
+// .bold / .italic / .blockquote / .code / .link / .heading / .list / .emoji，
+// 上传按钮为 .upload。
+//
+// 具体顺序由站点设置 school_engine_composer_button_order 决定，前端在
+// initializers 中把顺序写进 --school-btn-order-N 变量（见
+// applyComposerButtonOrder）。这里只声明读取变量的通用规则。
 // ---------------------------------------------------------------------------
 
 .d-editor-button-bar {
@@ -81,49 +85,13 @@
   align-items: center;
   gap: 0.2rem;
 
-  .upload {
-    order: 1;
+  .toolbar__button {
+    order: var(--school-btn-order, 50);
   }
 
-  .emoji {
-    order: 2;
-  }
-
-  .blockquote {
-    order: 3;
-  }
-
-  .list {
-    order: 4;
-  }
-
-  .bold {
-    order: 5;
-  }
-
-  .italic {
-    order: 6;
-  }
-
-  .code {
-    order: 10;
-  }
-
-  .link {
-    order: 11;
-  }
-
-  .heading {
-    order: 20;
-  }
-
-  .gifs {
-    order: 21;
-  }
-
-  // 插件模式切换滑块固定最右
+  // 模式切换滑块固定最右
   .school-composer-mode-switch {
-    order: 99;
+    order: 9999;
     margin-left: auto;
   }
 }
@@ -154,7 +122,8 @@
 .school-review,
 .school-directory-page,
 .school-profile-page {
-  max-width: 860px;
+  // 宽度由站点设置 school_engine_page_max_width 注入的 body 类决定
+  max-width: var(--school-page-max-width, 860px);
   margin-inline: auto;
   padding-inline: 1rem;
 }
@@ -297,13 +266,10 @@
     padding-inline: 0.75rem;
   }
 
-  // 移动端隐藏低频编辑按钮
-  .d-editor-button-bar {
-    .link,
-    .heading,
-    .gifs {
-      display: none;
-    }
+  // 移动端隐藏的按钮由设置 school_engine_composer_mobile_hidden 决定，
+  // 前端会为这些按钮加上 .school-btn-mobile-hidden 类
+  .d-editor-button-bar .school-btn-mobile-hidden {
+    display: none;
   }
 }
 

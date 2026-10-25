@@ -130,6 +130,106 @@ export default {
       // "不给老师看"开关：composer.schoolHideFromStaff → 创建主题请求参数
       // school_hide_from_staff（参照 discourse-post-voting 的官方模式，
       // 后端经 add_permitted_post_create_param 放行，避免弃用的 meta_data 通道）
+      // -----------------------------------------------------------------
+      // 界面定制：所有开关均来自站点设置，改设置即生效，无需改代码
+      // -----------------------------------------------------------------
+      const ui = api.getSiteSettings?.() || {};
+
+      /**
+       * 把界面设置应用到 <body>：
+       *  - 添加语义化 class，供 SCSS 精准控制
+       *  - 注入 CSS 变量（页面宽度、编辑器按钮顺序）
+       * 幂等：页面跳转后重复调用不会累积
+       */
+      const applyUiSettings = () => {
+        const body = document.body;
+        if (!body) {
+          return;
+        }
+
+        const enabled = ui.school_engine_ui_enabled !== false;
+        if (!enabled) {
+          body.classList.remove(
+            "school-ui-school-first",
+            "school-ui-hide-powered-by",
+            "school-ui-hide-native-flag"
+          );
+          return;
+        }
+
+        const toggle = (cls, on) => body.classList.toggle(cls, !!on);
+        toggle("school-ui-school-first", ui.school_engine_sidebar_school_first !== false);
+        toggle("school-ui-hide-powered-by", ui.school_engine_hide_powered_by !== false);
+        toggle("school-ui-hide-native-flag", ui.school_engine_hide_native_flag !== false);
+
+        // 页面最大宽度
+        const width = Number(ui.school_engine_page_max_width);
+        if (Number.isFinite(width) && width > 0) {
+          body.style.setProperty("--school-page-max-width", `${width}px`);
+        }
+
+        // 侧边栏隐藏分区：写入 CSS 变量，由 SCSS 统一消费
+        const hidden = Array.isArray(ui.school_engine_sidebar_hidden_sections)
+          ? ui.school_engine_sidebar_hidden_sections
+          : String(ui.school_engine_sidebar_hidden_sections || "")
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+        body.dataset.schoolHiddenSections = hidden.join(",");
+        document
+          .querySelectorAll(".sidebar-sections > [data-section-name]")
+          .forEach((el) => {
+            const name = el.getAttribute("data-section-name");
+            el.style.display = hidden.includes(name) ? "none" : "";
+          });
+
+        // 编辑器按钮顺序在实际挂载后处理（页面切换时也会重跑）
+      };
+
+      /**
+       * 按设置给编辑器按钮排序。
+       * Discourse 按钮的 className 默认等于按钮 id，因此可直接用类名定位。
+       * 通过 --school-btn-order 变量 + .toolbar__button{order:var(...)} 生效。
+       */
+      const applyComposerButtonOrder = () => {
+        const order = Array.isArray(ui.school_engine_composer_button_order)
+          ? ui.school_engine_composer_button_order
+          : String(ui.school_engine_composer_button_order || "")
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+        const mobileHidden = Array.isArray(ui.school_engine_composer_mobile_hidden)
+          ? ui.school_engine_composer_mobile_hidden
+          : String(ui.school_engine_composer_mobile_hidden || "")
+              .split(",")
+              .map((x) => x.trim())
+              .filter(Boolean);
+
+        document.querySelectorAll(".d-editor-button-bar").forEach((bar) => {
+          // 先清掉旧值与旧标记，避免切换设置后残留
+          bar.querySelectorAll(".toolbar__button").forEach((btn) => {
+            btn.style.removeProperty("--school-btn-order");
+            btn.classList.remove("school-btn-mobile-hidden");
+          });
+
+          if (order.length) {
+            order.forEach((name, index) => {
+              bar
+                .querySelectorAll(`.toolbar__button.${CSS.escape(name)}`)
+                .forEach((btn) => {
+                  btn.style.setProperty("--school-btn-order", String(index + 1));
+                });
+            });
+          }
+
+          mobileHidden.forEach((name) => {
+            bar
+              .querySelectorAll(`.toolbar__button.${CSS.escape(name)}`)
+              .forEach((btn) => btn.classList.add("school-btn-mobile-hidden"));
+          });
+        });
+      };
+
       api.serializeOnCreate("school_hide_from_staff", "schoolHideFromStaff");
       // 表达空间回帖匿名：composer.schoolAnonymous → school_anonymous 请求参数
       api.serializeOnCreate("school_anonymous", "schoolAnonymous");
@@ -138,9 +238,10 @@ export default {
 
       // 帖子菜单：staff 精选/取消精选（新版 glimmer post menu DAG；组件内部按分类+回帖条件自渲染）
       api.registerValueTransformer("post-menu-buttons", ({ value: dag, context }) => {
-        // 隐藏 Discourse 原生举报按钮（flag），统一改用插件的分类举报入口，
-        // 避免两套举报逻辑并存造成数据分散。
-        dag.remove("flag");
+        // 是否隐藏原生举报按钮由站点设置控制
+        if (ui.school_engine_hide_native_flag) {
+          dag.remove("flag");
+        }
 
         dag.add("school-feature", SchoolFeatureButton, {
           after: context.firstButtonKey,
@@ -190,6 +291,10 @@ export default {
       // 把滑块挂到工具栏内（与按钮同一父容器）；工具栏重渲染时幂等重挂
       const mountComposerSwitch = (bar) => {
         if (!bar || bar.querySelector(".school-composer-mode-switch")) {
+          return;
+        }
+        // 是否显示简洁/高级切换滑块由站点设置控制
+        if (ui.school_engine_composer_mode_switch === false) {
           return;
         }
         const anchor = bar.querySelector(
@@ -242,6 +347,14 @@ export default {
       document.querySelectorAll(".d-editor-button-bar").forEach(mountComposerSwitch);
       applyComposerMode(composerMode());
 
+      // 首屏即应用界面设置
+      document.body.classList.toggle(
+        "school-ui-enabled",
+        ui.school_engine_ui_enabled !== false
+      );
+      applyUiSettings();
+      applyComposerButtonOrder();
+
       const checked = "__school_junior_checked__";
 
       // 匿名帖：禁止点击头像/用户名跳转个人主页（全局只需注册一次，避免 onPageChange 累积监听器）
@@ -261,6 +374,12 @@ export default {
       );
 
       api.onPageChange(() => {
+        // 每次页面切换都重新应用界面设置（SPA 内跳转不刷新页面）
+        applyUiSettings();
+        if (document.body.classList.contains("school-ui-enabled")) {
+          applyComposerButtonOrder();
+        }
+
         // 登录/注册入口统一指向自定义页面（覆盖 header 按钮、/login /signup 路由、直接访问）
         const p = window.location.pathname;
 
